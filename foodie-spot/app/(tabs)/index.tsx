@@ -1,98 +1,178 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { MapPin, Search } from 'lucide-react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { CategoryList } from '@/components/category-list';
+import { RestaurantCard } from '@/components/restaurant-card';
+import { restaurantAPI } from '@/services/api';
+import { locationService } from '@/services/location';
+import { Restaurant } from '@/types';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [location, setLocation] = useState<string>('Locating...');
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  useEffect(() => {
+    // Fetch restaurants data
+    loadData();
+    getCurrentLocation();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const data = await restaurantAPI.getRestaurants();
+      setRestaurants(data);
+    } catch (error) {
+      // log.error("Failed to load restaurants", error);
+      Alert.alert("Error", "Failed to load restaurants");
+    }
+    finally {
+      setLoading(false);
+    }
+  };
+
+  const getCurrentLocation = async () => {
+    const coords = await locationService.getCurrentLocation();
+    if (coords) {
+      const address = await locationService.reverseGeoCode(coords);
+      if (address) {
+        setLocation(address);
+      }
+    }
+
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.locationContainer}>
+          <MapPin size={20} color="#fff" />
+          <View style= {{ flex: 1}}>
+            <Text style={styles.locationLabel}>Livraison à </Text>
+            <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.searchBar} onPress={() => router.push('/(tabs)/search')}>
+        <Search size={20} color="#666" />
+        <Text style={styles.searchPlaceholder}>Rechercher un restaurant...</Text>
+        </TouchableOpacity>
+      </View>
+
+
+      <ScrollView style={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+         <View style={styles.promoBanner}>
+          <Text style={styles.promoLabel}>Offre spéciale</Text>
+          <Text style={styles.promoTitle}>-30% sur votre première commande</Text>
+          <Text style={styles.promoCode}>Code: FOODIE30</Text>
+         </View>
+
+          <CategoryList />
+
+          <View style={styles.section}>
+              <Text style={styles.sectionTitle}> A proximité</Text>
+              {restaurants.map((restaurant) => (
+                <RestaurantCard key={restaurant.id} restaurant={restaurant} onPress={() => router.push(`/restaurant/${restaurant.id}`)} />
+              ))}
+              {!loading && restaurants.length === 0 && <Text style={styles.emptyText}>Aucun restaurant trouvé</Text>}
+              {/* {loading && <Text>Chargement des restaurants...</Text>} */}
+          </View>
+         
+      </ScrollView>
+    
+    </SafeAreaView>
   );
-}
+
+};
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  header: {
+    backgroundColor: '#FF6B35',
+    padding: 16,
+    paddingBottom: 20,
+  },
+  locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 16,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  locationLabel: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  locationText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
   },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  searchPlaceholder: {
+    flex: 1,
+    fontSize: 14,
+    color: 'rgba(0, 0, 0, 0.5)',
+  },
+  content : {
+    flex: 1,
+  },
+  promoBanner: {
+    margin: 16,
+    padding: 16,
+    backgroundColor: '#8B5CF6',
+    borderRadius: 16,
+  },
+  promoLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 1,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+
+  promoTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  promoCode: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  section: {
+    padding: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  emptyText: {
+    color: '#666',
+    textAlign: 'center',
+  }
+
 });
