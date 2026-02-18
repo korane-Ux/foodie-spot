@@ -37,3 +37,55 @@ export interface Dish {
     allergens?: string[];
     isAvailable: boolean;
 }
+
+
+export interface CartItem {
+    dish: Dish;
+    quantity: number;
+    options?: string[];
+    specialInstructions?: string;
+}
+
+export interface User {
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+    photo?: string;
+    addresses: Address[];
+    favoriteRestaurants: string[];
+}
+
+export interface Address {
+    id: string;
+    label: string;
+    street: string;
+    city: string;
+    postalCode: string;
+    country: string;
+    coordinates: {
+        latitude: number;
+        longitude: number;
+    };
+}
+export interface Order {
+    id: string;
+    restaurantId: string;
+    restaurantName: string;
+    items: CartItem[];
+    total: number;
+    deliveryFee: number;
+    status: 'pending' | 'confirmed' | 'preparing' | 'on-the-way' | 'delivered' | 'cancelled';
+    createdAt: Date;
+    estimatedDeliveryTime?: Date;
+    deliveryAddress: string;
+    driverInfo?:{
+        name: string;
+        phone: string;
+        photo?: string;
+        location?: {
+            latitude: number;
+            longitude: number;
+        };
+    };
+}

@@ -70,7 +70,7 @@ export default function HomeScreen() {
       </View>
 
 
-      <ScrollView style={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
          <View style={styles.promoBanner}>
           <Text style={styles.promoLabel}>Offre spéciale</Text>
           <Text style={styles.promoTitle}>-30% sur votre première commande</Text>

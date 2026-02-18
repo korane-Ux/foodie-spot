@@ -42,7 +42,7 @@ export default function RestaurantScreen() {
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            <ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.imageContainer}>
                     <Image source={{ uri: restaurant?.image }} style={styles.image} />
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -109,6 +109,7 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#fff',
+        marginTop: -50,
     },
     imageContainer: {
         position: 'relative',
