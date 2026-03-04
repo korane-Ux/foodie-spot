@@ -3,6 +3,8 @@
 import * as SecureStore from 'expo-secure-store';
 import api from './api';
 import log from './logger';
+import { STORAGE_KEYS } from './storage';
+import { cache } from './cache';
 
 // ============================================
 // Types
@@ -59,14 +61,7 @@ export interface AuthState {
   isAuthenticated: boolean;
 }
 
-// ============================================
-// Storage Keys
-// ============================================
-const STORAGE_KEYS = {
-  ACCESS_TOKEN: 'auth_access_token',
-  REFRESH_TOKEN: 'auth_refresh_token',
-  USER: 'auth_user',
-};
+
 
 // ============================================
 // Auth Service
@@ -181,6 +176,7 @@ class AuthService {
       await this.setStoredUser(user);
 
       log.info('✅ [Auth] Login successful for:', user.email);
+      log.debug('Received tokens:', tokens);
       return { user, tokens };
     } catch (error: any) {
       log.error('❌ [Auth] Login failed:', error.message);
@@ -242,8 +238,11 @@ class AuthService {
         await api.post('/auth/logout');
       } catch (error) {
         // Ignorer les erreurs de l'API logout
+        log.warn('⚠️ [Auth] Logout API call failed (ignoring):', error);
       }
       await this.clearTokens();
+      cache.clearAll();
+      
       log.info('✅ [Auth] Logout successful');
     } catch (error) {
       log.error('❌ [Auth] Logout error:', error);

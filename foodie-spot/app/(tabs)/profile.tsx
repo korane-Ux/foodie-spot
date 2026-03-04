@@ -8,9 +8,16 @@ import * as ImagePicker from 'expo-image-picker';
 import { userAPI, uploadAPI } from '../../services/api';
 import type { User } from '../../types';
 import log from '../../services/logger';
+import auth from '@/services/auth';
+import  { useToast, ToastProvider } from '@/components/toast-provider';
+import { useAuth } from '@/contexts/auth-context';
 
 export default function ProfileScreen() {
+
+  const toast = useToast();
   const [user, setUser] = useState<User | null>(null);
+  const { logout } = useAuth();
+
 
   useEffect(() => {
     loadUser();
@@ -18,7 +25,9 @@ export default function ProfileScreen() {
 
   const loadUser = async () => {
     const userData = await userAPI.getCurrentUser();
-    setUser(userData);
+    log.info('Loaded user data:', toast, userData);
+    // ensure favoriteRestaurants is always an array
+    setUser(userData ? { ...userData, favoriteRestaurants: userData.favoriteRestaurants || [] } : null);
   };
 
   const handlePickImage = async () => {
@@ -28,7 +37,7 @@ export default function ProfileScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images', 'videos', 'livePhotos'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -38,6 +47,7 @@ export default function ProfileScreen() {
         const imageUrl = await uploadAPI.uploadImage(result.assets[0].uri, 'profile');
         await userAPI.updateProfile({ photo: imageUrl });
         await loadUser();
+        toast.success('Photo de profil mise à jour !'); 
       } catch (error) {
         log.error('Failed to upload profile photo:', error);
         Alert.alert('Erreur', 'Impossible de télécharger la photo');
@@ -52,8 +62,7 @@ export default function ProfileScreen() {
         text: 'Déconnexion',
         style: 'destructive',
         onPress: async () => {
-          await userAPI.logout();
-          router.replace('/(auth)/login');
+          await logout();
         },
       },
     ]);
@@ -96,7 +105,7 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user?.favoriteRestaurants.length}</Text>
+            <Text style={styles.statValue}>{user?.favoriteRestaurants?.length ?? 0}</Text>
             <Text style={styles.statLabel}>Favoris</Text>
           </View>
           <View style={styles.statDivider} />
@@ -135,7 +144,7 @@ export default function ProfileScreen() {
             <ChevronRight size={18} color="#ccc" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Support', 'Pour toute assistance, veuillez contacter notre support client ')}>
             <Phone size={20} color="#666" />
             <Text style={styles.menuText}>Support</Text>
             <ChevronRight size={18} color="#ccc" />
@@ -187,7 +196,7 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.favoriteRestaurants.length}</Text>
+            <Text style={styles.statValue}>{user.favoriteRestaurants?.length ?? 0}</Text>
             <Text style={styles.statLabel}>Favoris</Text>
           </View>
           <View style={styles.statDivider} />

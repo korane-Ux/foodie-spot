@@ -35,9 +35,11 @@ export default function RestaurantScreen() {
     };
 
     if (!restaurant) {
-        <SafeAreaView style={styles.container} edges={['top']}>
-            <Text>Loading...</Text>
-        </SafeAreaView>
+        return (
+            <SafeAreaView style={styles.container} edges={['top']}>
+                <Text>Loading...</Text>
+            </SafeAreaView>
+        );
     }
 
     return (
@@ -67,10 +69,12 @@ export default function RestaurantScreen() {
                                 {restaurant?.rating.toFixed(1)} ({restaurant?.reviewsCount})
                             </Text>
                         </View>
-                         <View style={styles.metaItem}>
+                        <View style={styles.metaItem}>
                             <Clock size={16} color="#666"/>
                             <Text style={styles.metaText}>
-                                {restaurant?.deliveryTime} min
+                                {typeof restaurant?.deliveryTime === 'object' && restaurant?.deliveryTime !== null
+                                    ? `${(restaurant.deliveryTime as { min: number; max: number }).min}-${(restaurant.deliveryTime as { min: number; max: number }).max}` 
+                                    : restaurant?.deliveryTime} min
                             </Text>
                         </View>
                          <View style={styles.metaItem}>
@@ -121,7 +125,7 @@ const styles = StyleSheet.create({
     },
     backButton: {
         position: 'absolute',
-        top: 16,
+        top: 50,
         left: 16,
         borderRadius: 20,
         backgroundColor: '#fff',
@@ -137,6 +141,7 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     actionButton: {
+        marginTop: 34,
         width: 40,
         height: 40,
         borderRadius: 20,

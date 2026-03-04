@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import 'react-native-reanimated';
 
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
+import { ToastProvider } from '@/components/toast-provider';
 import { useOffline } from '@/hooks/use-offline';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -39,7 +40,7 @@ function RootLayoutContent() {
 
     if (!isAuthenticated && isProtectedRoute) {
       console.log('🔒 Redirecting to login...');
-      router.replace('/(auth)/login');
+      router.replace('/login');
     } else if (isAuthenticated && isAuthRoute) {
       console.log('✅ Redirecting to home...');
       router.replace('/(tabs)');
@@ -111,9 +112,11 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
+        <ToastProvider>
         <AuthProvider>
           <RootLayoutContent />
         </AuthProvider>
+        </ToastProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

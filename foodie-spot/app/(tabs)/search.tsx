@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-
+import { useRouter } from "expo-router";
 import { RestaurantCard } from "@/components/restaurant-card";
 import { Colors } from "@/constants/theme";
 import { restaurantAPI } from "@/services/api";
@@ -10,6 +10,7 @@ import { Filter, Search } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function SearchScreen() {
+    const router = useRouter();
     const [query, setQuery] = useState('');
     const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
     const [filters, setFilters] = useState<SearchFilters>({});

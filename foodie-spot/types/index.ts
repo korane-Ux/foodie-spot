@@ -89,3 +89,35 @@ export interface Order {
         };
     };
 }
+
+export interface ToastMessage {
+    id: string;
+    message: string;
+    type: ToastType;
+    duration?: number;
+}
+
+export interface ToastOptions {
+    type?: ToastType;
+    duration?: number;
+}
+
+export type ToastType = 'success' | 'error' | 'info';
+
+export interface ToastContextType { 
+    show: (message: string,  type?: ToastType, duration?: number) => void;
+    success: (message: string,  duration?: number) => void;
+    error: (message: string,  duration?: number) => void;
+    info: (message: string, duration?: number) => void;
+    warning: (message: string,  duration?: number) =>  void;
+}
+
+
+export interface ToastStackProps {
+    toasts: ToastMessage[];
+}
+
+export interface ToastItemProps {
+    toast: ToastMessage;
+    index: number;
+}

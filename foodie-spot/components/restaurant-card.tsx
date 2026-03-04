@@ -28,16 +28,20 @@ export const RestaurantCard: React.FC<Props> = ({ restaurant, onPress, compact }
                 <View style={styles.meta}>
                     <View style={styles.metaItem}>
                         <Star size={16} color="#FF6B35" />
-                        <Text style={styles.metaText}>{restaurant.rating} {restaurant.reviewsCount} avis</Text>
+                        <Text style={styles.metaText}>{restaurant.rating} {restaurant.reviewCount} avis</Text>
                     </View>
                     <View style={styles.metaItem}>
                         <Clock size={16} color="#FF6B35" />
-                        <Text style={styles.metaText}>{restaurant.deliveryTime} min</Text>
+                        <Text style={styles.metaText}>
+                            {typeof restaurant.deliveryTime === 'object' 
+                                ? `${restaurant.deliveryTime.min}-${restaurant.deliveryTime.max}` 
+                                : restaurant.deliveryTime} min
+                        </Text>
                     </View>
 
                     <View style={styles.metaItem}>
                         <MapPin size={16} color="#FF6B35" />
-                        <Text style={styles.metaText}>{restaurant.distance} km</Text>
+                        <Text style={styles.metaText}>{restaurant.distance ?? 15} km</Text>
                     </View>
                     {!compact && <Text style={styles.description} numberOfLines={2}>{restaurant.description}</Text>}
 

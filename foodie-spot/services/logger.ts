@@ -9,7 +9,7 @@ const defaultConfig = {
         warn : 2,
         error : 3,
     },
-    severity: config.apiUrl.includes('localhost') ? 'debug' : 'info',
+    severity: config.API_URL.includes('localhost') ? 'debug' : 'info',
     transport: consoleTransport,
     // transportOptions: {
     //     colors: {
