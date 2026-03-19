@@ -38,8 +38,8 @@ export default function NotificationScreen() {
     }
 
     useEffect(() => {
-        refreshScheduled();
-    });
+    refreshScheduled();
+}, []); // ← tableau vide = s'exécute une seule fois au montage
 
     const handleInitialize = async () => {
         addTestResult('🔄 Initialisation des notifications ...');

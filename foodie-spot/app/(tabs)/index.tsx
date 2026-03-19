@@ -1,5 +1,5 @@
 import { MapPin, Search } from 'lucide-react-native';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { CategoryList } from '@/components/category-list';
 import { RestaurantCard } from '@/components/restaurant-card';
@@ -14,10 +14,9 @@ export default function HomeScreen() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [location, setLocation] = useState<string>('Locating...');
+  const [location, setLocation] = useState<string>('Localisation...');
 
   useEffect(() => {
-    // Fetch restaurants data
     loadData();
     getCurrentLocation();
   }, []);
@@ -27,10 +26,8 @@ export default function HomeScreen() {
       const data = await restaurantAPI.getRestaurants();
       setRestaurants(data);
     } catch (error) {
-      // log.error("Failed to load restaurants", error);
-      Alert.alert("Error", "Failed to load restaurants");
-    }
-    finally {
+      Alert.alert("Erreur", "Impossible de charger les restaurants");
+    } finally {
       setLoading(false);
     }
   };
@@ -43,7 +40,6 @@ export default function HomeScreen() {
         setLocation(address);
       }
     }
-
   };
 
   const onRefresh = async () => {
@@ -57,43 +53,60 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.locationContainer}>
           <MapPin size={20} color="#fff" />
-          <View style= {{ flex: 1}}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.locationLabel}>Livraison à </Text>
             <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
           </View>
         </View>
 
         <TouchableOpacity style={styles.searchBar} onPress={() => router.push('/(tabs)/search')}>
-        <Search size={20} color="#666" />
-        <Text style={styles.searchPlaceholder}>Rechercher un restaurant...</Text>
+          <Search size={20} color="#666" />
+          <Text style={styles.searchPlaceholder}>Rechercher un restaurant...</Text>
         </TouchableOpacity>
       </View>
 
-
-      <ScrollView showsVerticalScrollIndicator={false} style={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-         <View style={styles.promoBanner}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        style={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {/* Bannière promo */}
+        <View style={styles.promoBanner}>
           <Text style={styles.promoLabel}>Offre spéciale</Text>
           <Text style={styles.promoTitle}>-30% sur votre première commande</Text>
           <Text style={styles.promoCode}>Code: FOODIE30</Text>
-         </View>
+        </View>
 
-          <CategoryList />
+        <CategoryList />
 
-          <View style={styles.section}>
-              <Text style={styles.sectionTitle}> A proximité</Text>
-              {restaurants.map((restaurant) => (
-                <RestaurantCard key={restaurant.id} restaurant={restaurant} onPress={() => router.push(`/restaurant/${restaurant.id}`)} />
-              ))}
-              {!loading && restaurants.length === 0 && <Text style={styles.emptyText}>Aucun restaurant trouvé</Text>}
-              {/* {loading && <Text>Chargement des restaurants...</Text>} */}
-          </View>
-         
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>À proximité</Text>
+
+          {/* État de chargement */}
+          {loading ? (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color="#FF6B35" />
+              <Text style={styles.loadingText}>Chargement des restaurants...</Text>
+            </View>
+          ) : restaurants.length === 0 ? (
+            <View style={styles.centered}>
+              <Text style={styles.emptyIcon}>🍽️</Text>
+              <Text style={styles.emptyText}>Aucun restaurant trouvé</Text>
+            </View>
+          ) : (
+            restaurants.map((restaurant) => (
+              <RestaurantCard
+                key={restaurant.id}
+                restaurant={restaurant}
+                onPress={() => router.push(`/restaurant/${restaurant.id}`)}
+              />
+            ))
+          )}
+        </View>
       </ScrollView>
-    
     </SafeAreaView>
   );
-
-};
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -134,7 +147,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(0, 0, 0, 0.5)',
   },
-  content : {
+  content: {
     flex: 1,
   },
   promoBanner: {
@@ -151,7 +164,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: 'uppercase',
   },
-
   promoTitle: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -170,9 +182,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 16,
   },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666',
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 8,
+  },
   emptyText: {
     color: '#666',
     textAlign: 'center',
-  }
-
+    fontSize: 16,
+  },
 });

@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 const ENV = {
     development: {
         // API_URL: 'http://localhost:4000/',
-        API_URL: 'http://192.168.1.91:4000/',
+        API_URL: 'http://192.168.1.106:4000/',
     },
     staging: {
         API_URL: 'https://staging-api.foodie-spot.com/api',

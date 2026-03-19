@@ -25,17 +25,16 @@ export const useNotifications = (
     const loadData = async () => {
         try {
 
-            const [token, prefs, badge, scheduledList] = await Promise.all([
-                notifications.getToken(),
-                notifications.getPreferences(),
-                // notifications.getBadge(),
-                notifications.getScheduled(),
-            ]);
+        const [token, prefs, scheduledList] = await Promise.all([
+    notifications.getToken(),
+    notifications.getPreferences(),
+    notifications.getScheduled(),
+]);
 
-            setPushToken(token);
-            setPreferences(prefs);
-            setBadgeCount(badge);
-            setScheduled(scheduledList);
+setPushToken(token);
+setPreferences(prefs);
+setBadgeCount(0); // badge mis à 0 par défaut
+setScheduled(scheduledList);
             setHasPermission(!!token);
         } finally {
             setIsLoading(false);

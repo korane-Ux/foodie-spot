@@ -130,7 +130,7 @@ export const restaurantAPI = {
     },
     async searchRestaurants(query: string): Promise<Restaurant[]> {
         try {
-            const response = await api.get('/restaurants/search', { params: { q: query } });
+            const response = await api.get('/restaurants', { params: { search: query } });
             return response.data?.data || [];
         } catch (error) {
             log.error('Failed to search restaurants', error);
@@ -182,7 +182,18 @@ export const restaurantAPI = {
             const cached = await cache.get<Dish[]>(`menu_${restaurantId}`);
             return cached || [];
         }
-    }
+    },
+
+    async getCategories(): Promise<string[]> {
+        try {
+            const response = await api.get('/categories');
+            const categories = response.data?.data || [];
+            return categories.map((c: any) => c.name || c);
+        } catch (error) {
+            log.error('Failed to fetch categories', error);
+            return [];
+        }
+    },
 }
 
 export const userAPI = {
