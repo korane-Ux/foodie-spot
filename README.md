@@ -240,11 +240,7 @@ POST /uploads                  Upload photo
 
 ---
 
-## ⚠️ Limites connues
 
-- **Recherche vocale** : simulation locale (en production → Google Speech-to-Text ou OpenAI Whisper)
-- **Paiement** : simulé (pas de vrai gateway de paiement)
-- **Push notifications** : nécessite un appareil physique (pas de simulateur)
 
 ---
 
