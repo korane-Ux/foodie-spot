@@ -1,0 +1,53 @@
+[
+  {
+    "id": "2995d26d-0335-4f41-9c35-b3182dee2de4",
+    "userId": "f204182b-5645-49cd-9f58-7a0fefa67290",
+    "userName": "chiifa Demo",
+    "userAvatar": "",
+    "restaurantId": "r2",
+    "orderId": "a08148e9-7bbb-436a-ad04-63a67551a3ee",
+    "rating": 4,
+    "qualityRating": 3,
+    "speedRating": 4,
+    "presentationRating": 3,
+    "comment": "Good\n",
+    "images": [],
+    "likes": 0,
+    "isVerifiedPurchase": true,
+    "createdAt": "2026-03-16T16:19:53.883Z"
+  },
+  {
+    "id": "b4c0c649-551a-487c-9fff-d6ade15c4c6e",
+    "userId": "f204182b-5645-49cd-9f58-7a0fefa67290",
+    "userName": "chiifa Demo",
+    "userAvatar": "",
+    "restaurantId": "r6",
+    "orderId": "cd27c157-fd07-4860-8057-92937b494c45",
+    "rating": 5,
+    "qualityRating": null,
+    "speedRating": null,
+    "presentationRating": null,
+    "comment": "",
+    "images": [],
+    "likes": 0,
+    "isVerifiedPurchase": true,
+    "createdAt": "2026-03-16T16:26:56.954Z"
+  },
+  {
+    "id": "16d0c638-9d62-430b-a555-8e7e86257777",
+    "userId": "6418f441-241f-4a4c-8489-ff8f780c1b44",
+    "userName": "Yazid EL-BAK",
+    "userAvatar": "",
+    "restaurantId": "r2",
+    "orderId": "2311e08d-3e62-4d00-a333-a45936274075",
+    "rating": 3,
+    "qualityRating": null,
+    "speedRating": null,
+    "presentationRating": null,
+    "comment": "",
+    "images": [],
+    "likes": 0,
+    "isVerifiedPurchase": true,
+    "createdAt": "2026-03-16T20:16:08.768Z"
+  }
+]

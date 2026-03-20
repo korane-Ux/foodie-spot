@@ -1,8 +1,12 @@
+// =============================================================
+// contexts/auth-context.tsx
+// Contexte d'authentification global
+// Fournit : user, isAuthenticated, login, register, logout
+// =============================================================
 
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { auth, LoginCredentials, RegisterData, User, AuthTokens } from '@/services/auth';
 import log from '@/services/logger';
-import { router } from 'expo-router';
 
 interface AuthContextType {
   user: User | null;
@@ -25,17 +29,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Vérifie l'état auth au démarrage (tokens stockés ?)
   const checkAuth = useCallback(async () => {
     try {
-      log.debug('🔍 [AuthContext] Checking auth state...');
+      log.debug('🔍 [AuthContext] Vérification état auth...');
       setIsLoading(true);
       setError(null);
       const state = await auth.getAuthState();
       setUser(state.user);
       setIsAuthenticated(state.isAuthenticated);
-      log.debug('✅ [AuthContext] Auth state:', state.isAuthenticated ? 'authenticated' : 'not authenticated');
+      log.debug('✅ [AuthContext] État auth:', state.isAuthenticated ? 'connecté' : 'non connecté');
     } catch (err) {
-      log.error('❌ [AuthContext] Auth check failed:', err);
+      log.error('❌ [AuthContext] Erreur vérification auth:', err);
       setError(err instanceof Error ? err.message : 'Erreur de vérification');
       setIsAuthenticated(false);
       setUser(null);
@@ -52,12 +57,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       setIsLoading(true);
       setError(null);
+
+      // Appel API de connexion
       const result = await auth.login(credentials);
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const state = await auth.getAuthState();
-      setUser(state.user);
-      setIsAuthenticated(state.isAuthenticated);
-      log.info('✅ [AuthContext] Login completed');
+
+      // CORRECTION : le code original avait un setTimeout(resolve, 100) arbitraire ici
+      // Ancien code :
+      // await new Promise(resolve => setTimeout(resolve, 100));
+      // const state = await auth.getAuthState();
+      // → Causait une boucle : le guard voyait isAuthenticated=false pendant 100ms
+      //   et redirectionnait vers /login alors que le login venait de réussir
+      //
+      // CORRECTION : on met directement l'état depuis le résultat du login
+      setUser(result.user);
+      setIsAuthenticated(true);
+
+      log.info('✅ [AuthContext] Connexion réussie');
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Échec de connexion';
@@ -74,15 +89,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       setIsLoading(true);
       setError(null);
+
       const result = await auth.register(data);
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const state = await auth.getAuthState();
-      setUser(state.user);
-      setIsAuthenticated(state.isAuthenticated);
-      log.info('✅ [AuthContext] Registration completed');
+
+      // Même correction que pour login : pas de setTimeout arbitraire
+      setUser(result.user);
+      setIsAuthenticated(true);
+
+      log.info('✅ [AuthContext] Inscription réussie');
       return result;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Échec de l\'inscription';
+      const message = err instanceof Error ? err.message : "Échec de l'inscription";
       setError(message);
       setIsAuthenticated(false);
       setUser(null);
@@ -97,13 +114,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsLoading(true);
       setError(null);
       await auth.logout();
+      // On remet tout à zéro
       setUser(null);
       setIsAuthenticated(false);
-      log.info('✅ [AuthContext] Logout completed');
-     router.replace('/login');
+      log.info('✅ [AuthContext] Déconnexion réussie');
+      // La navigation vers /login est gérée par le NavigationGuard dans _layout
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Échec de déconnexion';
       setError(message);
+      // On déconnecte quand même côté local même si l'API échoue
       setUser(null);
       setIsAuthenticated(false);
     } finally {
@@ -153,7 +172,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth doit être utilisé dans un AuthProvider');
   }
   return context;
 };

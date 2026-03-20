@@ -1,96 +1,211 @@
-
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from 'react-native';
+import {
+  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ScrollView, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
+} from 'react-native';
 import { router } from 'expo-router';
-import { Eye, EyeOff, Mail, Lock, User, Phone } from 'lucide-react-native';
+import { Eye, EyeOff, Lock, Mail, Phone, User } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { useAuth } from '@/contexts/auth-context';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/theme-context';
+import { useI18n } from '@/contexts/i18n-context';
+import { COLORS } from '@/constants/theme';
+
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+
+type Fields = 'firstName' | 'lastName' | 'email' | 'password' | 'confirmPassword';
 
 export default function RegisterScreen() {
-  const { register, isLoading, error } = useAuth();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const { register, isLoading, error, clearError } = useAuth();
+  const { colors } = useTheme();
+  const { t } = useI18n();
+
+  const [form, setForm] = useState({
+    firstName: '', lastName: '', email: '',
+    phone: '', password: '', confirmPassword: '',
+  });
   const [showPassword, setShowPassword] = useState(false);
-  const [localError, setLocalError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<Fields, string>>>({});
+
+  const setField = (key: keyof typeof form, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (fieldErrors[key as Fields]) {
+      setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+    }
+    clearError();
+  };
+
+  const validate = (): boolean => {
+    const errors: Partial<Record<Fields, string>> = {};
+    if (!form.firstName.trim()) errors.firstName = t('auth.firstNameRequired');
+    if (!form.lastName.trim()) errors.lastName = t('auth.lastNameRequired');
+    if (!form.email.trim()) {
+      errors.email = t('auth.emailRequired');
+    } else if (!EMAIL_REGEX.test(form.email.trim())) {
+      errors.email = t('auth.emailInvalid');
+    }
+    if (!form.password) {
+      errors.password = t('auth.passwordRequired');
+    } else if (form.password.length < 6) {
+      errors.password = t('auth.passwordTooShort');
+    }
+    if (form.password !== form.confirmPassword) {
+      errors.confirmPassword = t('auth.passwordsNoMatch');
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleRegister = async () => {
-    if (!firstName.trim()) { setLocalError('Veuillez entrer votre prénom'); return; }
-    if (!lastName.trim()) { setLocalError('Veuillez entrer votre nom'); return; }
-    if (!email.includes('@')) { setLocalError('Email invalide'); return; }
-    if (password.length < 6) { setLocalError('Mot de passe trop court (min 6)'); return; }
-    if (password !== confirmPassword) { setLocalError('Mots de passe différents'); return; }
-
-    setLocalError('');
+    clearError();
+    if (!validate()) return;
     try {
-      await register({ email: email.trim(), password, firstName: firstName.trim(), lastName: lastName.trim(), phone: phone.trim() });
-    } catch (err) {
-      console.log('Register error handled');
+      await register({
+        email: form.email.trim(),
+        password: form.password,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        phone: form.phone.trim(),
+      });
+    } catch {
+      // Erreur gérée par le contexte
     }
   };
 
-  const displayError = localError || error;
+  const InputField = ({
+    field, icon, placeholder, secure, keyboardType, half,
+  }: {
+    field: Fields | 'phone';
+    icon: React.ReactNode;
+    placeholder: string;
+    secure?: boolean;
+    keyboardType?: any;
+    half?: boolean;
+  }) => {
+    const isSecureField = secure;
+    return (
+      <View style={[styles.fieldGroup, half && { flex: 1 }]}>
+        <View style={[
+          styles.inputRow,
+          { backgroundColor: colors.backgroundSecondary },
+          fieldErrors[field as Fields] ? styles.inputError : null,
+        ]}>
+          {icon}
+          <TextInput
+            style={[styles.input, { color: colors.text }]}
+            placeholder={placeholder}
+            placeholderTextColor={colors.textMuted}
+            value={form[field as keyof typeof form]}
+            onChangeText={(v) => setField(field as keyof typeof form, v)}
+            secureTextEntry={isSecureField && !showPassword}
+            keyboardType={keyboardType ?? 'default'}
+            autoCapitalize={field === 'email' ? 'none' : 'words'}
+            autoCorrect={false}
+            editable={!isLoading}
+          />
+          {isSecureField && (
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              {showPassword
+                ? <EyeOff size={18} color={colors.textMuted} />
+                : <Eye size={18} color={colors.textMuted} />}
+            </TouchableOpacity>
+          )}
+        </View>
+        {fieldErrors[field as Fields] && (
+          <Text style={styles.fieldError}>{fieldErrors[field as Fields]}</Text>
+        )}
+      </View>
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>🍔</Text>
-            <Text style={styles.title}>Créer un compte</Text>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          {/* Logo */}
+          <View style={styles.logoSection}>
+            <Text style={styles.logoEmoji}>🍔</Text>
+            <Text style={[styles.title, { color: COLORS.primary }]}>{t('auth.registerTitle')}</Text>
           </View>
 
-          {displayError && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{displayError}</Text>
+          {/* Erreur serveur */}
+          {error && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{error}</Text>
             </View>
           )}
 
+          {/* Formulaire */}
           <View style={styles.form}>
+            {/* Prénom + Nom en ligne */}
             <View style={styles.nameRow}>
-              <View style={[styles.inputContainer, { flex: 1 }]}>
-                <User size={20} color="#999" />
-                <TextInput style={styles.input} placeholder="Prénom" value={firstName} onChangeText={t => { setFirstName(t); setLocalError(''); }} editable={!isLoading} />
-              </View>
-              <View style={[styles.inputContainer, { flex: 1 }]}>
-                <TextInput style={styles.input} placeholder="Nom" value={lastName} onChangeText={t => { setLastName(t); setLocalError(''); }} editable={!isLoading} />
-              </View>
+              <InputField
+                field="firstName"
+                icon={<User size={18} color={fieldErrors.firstName ? COLORS.error : colors.textMuted} />}
+                placeholder={t('auth.firstName')}
+                half
+              />
+              <InputField
+                field="lastName"
+                icon={<></>}
+                placeholder={t('auth.lastName')}
+                half
+              />
             </View>
 
-            <View style={styles.inputContainer}>
-              <Mail size={20} color="#999" />
-              <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={t => { setEmail(t); setLocalError(''); }} keyboardType="email-address" autoCapitalize="none" editable={!isLoading} />
-            </View>
+            <InputField
+              field="email"
+              icon={<Mail size={20} color={fieldErrors.email ? COLORS.error : colors.textMuted} />}
+              placeholder={t('auth.email')}
+              keyboardType="email-address"
+            />
 
-            <View style={styles.inputContainer}>
-              <Phone size={20} color="#999" />
-              <TextInput style={styles.input} placeholder="Téléphone (optionnel)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" editable={!isLoading} />
-            </View>
+            <InputField
+              field="phone"
+              icon={<Phone size={20} color={colors.textMuted} />}
+              placeholder={t('auth.phone')}
+              keyboardType="phone-pad"
+            />
 
-            <View style={styles.inputContainer}>
-              <Lock size={20} color="#999" />
-              <TextInput style={styles.input} placeholder="Mot de passe" value={password} onChangeText={t => { setPassword(t); setLocalError(''); }} secureTextEntry={!showPassword} editable={!isLoading} />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                {showPassword ? <EyeOff size={20} color="#999" /> : <Eye size={20} color="#999" />}
-              </TouchableOpacity>
-            </View>
+            <InputField
+              field="password"
+              icon={<Lock size={20} color={fieldErrors.password ? COLORS.error : colors.textMuted} />}
+              placeholder={t('auth.password')}
+              secure
+            />
 
-            <View style={styles.inputContainer}>
-              <Lock size={20} color="#999" />
-              <TextInput style={styles.input} placeholder="Confirmer mot de passe" value={confirmPassword} onChangeText={t => { setConfirmPassword(t); setLocalError(''); }} secureTextEntry={!showPassword} editable={!isLoading} />
-            </View>
+            <InputField
+              field="confirmPassword"
+              icon={<Lock size={20} color={fieldErrors.confirmPassword ? COLORS.error : colors.textMuted} />}
+              placeholder={t('auth.confirmPassword')}
+              secure
+            />
 
-            <TouchableOpacity style={[styles.button, isLoading && styles.buttonDisabled]} onPress={handleRegister} disabled={isLoading}>
-              {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Créer mon compte</Text>}
+            <TouchableOpacity
+              style={[styles.submitBtn, isLoading && styles.submitDisabled]}
+              onPress={handleRegister}
+              disabled={isLoading}
+              activeOpacity={0.85}
+            >
+              {isLoading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.submitText}>{t('auth.createAccount')}</Text>}
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.loginButton} onPress={() => router.back()} disabled={isLoading}>
-            <Text style={styles.loginText}>Déjà un compte ? <Text style={styles.loginTextBold}>Se connecter</Text></Text>
+          <TouchableOpacity
+            style={styles.switchAuth}
+            onPress={() => router.back()}
+            disabled={isLoading}
+          >
+            <Text style={[styles.switchText, { color: colors.textSecondary }]}>
+              {t('auth.alreadyAccount')}{' '}
+              <Text style={[styles.switchTextBold, { color: COLORS.primary }]}>
+                {t('auth.login')}
+              </Text>
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -99,21 +214,34 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  logoContainer: { alignItems: 'center', marginBottom: 24 },
-  logo: { fontSize: 48, marginBottom: 8 },
-  title: { fontSize: 28, fontWeight: 'bold', color: Colors.light.tint },
-  errorContainer: { backgroundColor: '#FFEBEE', padding: 12, borderRadius: 12, marginBottom: 16 },
-  errorText: { color: '#D32F2F', fontSize: 14, textAlign: 'center' },
-  form: { width: '100%' },
-  nameRow: { flexDirection: 'row', gap: 12 },
-  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 12, marginBottom: 12, paddingHorizontal: 16, gap: 12 },
-  input: { flex: 1, paddingVertical: 16, fontSize: 16, color: '#000' },
-  button: { backgroundColor: Colors.light.tint, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
-  buttonDisabled: { opacity: 0.7 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  loginButton: { alignItems: 'center', padding: 16, marginTop: 16 },
-  loginText: { color: '#666', fontSize: 14 },
-  loginTextBold: { color: Colors.light.tint, fontWeight: '600' },
+  container: { flex: 1 },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  logoSection: { alignItems: 'center', marginBottom: 24 },
+  logoEmoji: { fontSize: 48, marginBottom: 8 },
+  title: { fontSize: 26, fontWeight: 'bold' },
+  errorBanner: {
+    backgroundColor: '#FFEBEE', borderRadius: 12,
+    padding: 12, marginBottom: 12,
+  },
+  errorBannerText: { color: COLORS.error, textAlign: 'center', fontSize: 14 },
+  form: { gap: 0 },
+  nameRow: { flexDirection: 'row', gap: 10 },
+  fieldGroup: { marginBottom: 10 },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 12, paddingHorizontal: 14,
+    gap: 10, borderWidth: 1.5, borderColor: 'transparent',
+  },
+  inputError: { borderColor: COLORS.error },
+  input: { flex: 1, paddingVertical: 14, fontSize: 15 },
+  fieldError: { color: COLORS.error, fontSize: 11, marginTop: 3, marginLeft: 4 },
+  submitBtn: {
+    backgroundColor: COLORS.primary, borderRadius: 12,
+    padding: 16, alignItems: 'center', marginTop: 8,
+  },
+  submitDisabled: { opacity: 0.65 },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  switchAuth: { alignItems: 'center', padding: 16, marginTop: 12 },
+  switchText: { fontSize: 14 },
+  switchTextBold: { fontWeight: '700' },
 });

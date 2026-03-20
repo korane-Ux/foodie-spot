@@ -35,6 +35,15 @@ if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ===========================================
+// Configuration Email (Nodemailer)
+// En prod : configurer EMAIL_USER + EMAIL_PASS dans .env
+// En test : le code s'affiche dans la console du backend
+// ===========================================
+
+
+
+
+// ===========================================
 // Database helpers (JSON files)
 // ===========================================
 function loadJSON(filename) {
@@ -163,7 +172,7 @@ app.get("/health", (req, res) => {
 // ===========================================
 // Routes - Authentication (Module 08)
 // ===========================================
-app.post("/auth/register", (req, res) => {
+app.post("/auth/register", async (req, res) => {
   const { email, password, firstName, lastName, phone } = req.body || {};
 
   if (!email || !password || !firstName || !lastName) {
@@ -182,7 +191,7 @@ app.post("/auth/register", (req, res) => {
   const newUser = {
     id: uuidv4(),
     email,
-    password, // En prod: hasher avec bcrypt!
+    password,  // En prod: hasher avec bcrypt
     firstName,
     lastName,
     phone: phone || "",
@@ -220,40 +229,22 @@ app.post("/auth/login", (req, res) => {
     return res.status(400).json({ success: false, message: "Email et mot de passe requis" });
   }
 
-  // Pour le mock: on accepte tout ou on vérifie dans users.json
-  let user = users.find(u => u.email === email);
-  
+  // Vérification stricte : l'utilisateur DOIT avoir un compte existant
+  const user = users.find(u => u.email === email);
+
   if (!user) {
-    // Créer un utilisateur mock si n'existe pas
-    user = {
-      id: uuidv4(),
-      email,
-      firstName: email.split("@")[0],
-      lastName: "Demo",
-      phone: "",
-      avatar: "",
-      addresses: [
-        {
-          id: uuidv4(),
-          label: "Maison",
-          street: "123 Rue de Paris",
-          city: "Paris",
-          postalCode: "75001",
-          country: "France",
-          latitude: 48.8566,
-          longitude: 2.3522,
-          isDefault: true
-        }
-      ],
-      notificationsEnabled: true,
-      preferences: {
-        theme: "system",
-        language: "fr"
-      },
-      createdAt: new Date().toISOString()
-    };
-    users.push({ ...user, password });
-    saveJSON("users.json", users);
+    return res.status(401).json({
+      success: false,
+      message: "Aucun compte trouvé avec cet email. Veuillez créer un compte."
+    });
+  }
+
+  // Vérification du mot de passe
+  if (user.password !== password) {
+    return res.status(401).json({
+      success: false,
+      message: "Mot de passe incorrect."
+    });
   }
 
   const { password: _, ...userWithoutPassword } = user;
@@ -301,10 +292,75 @@ app.post("/auth/logout", authenticateToken, (req, res) => {
   res.json({ success: true, message: "Déconnexion réussie" });
 });
 
-app.post("/auth/forgot-password", (req, res) => {
+app.post("/auth/forgot-password", async (req, res) => {
   const { email } = req.body || {};
-  // Mock: toujours succès
-  res.json({ success: true, message: "Email de récupération envoyé" });
+
+  if (!email) {
+    return res.status(400).json({ success: false, message: "Email requis" });
+  }
+
+  const user = users.find(u => u.email === email);
+
+  if (!user) {
+    // On répond succès même si l'email n'existe pas (sécurité : ne pas révéler si un email est inscrit)
+    return res.json({ success: true, message: "Si cet email existe, un code de réinitialisation a été envoyé." });
+  }
+
+  // Génère un code à 6 chiffres valable 15 minutes
+  const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 15 * 60 * 1000;
+
+  const userIndex = users.findIndex(u => u.email === email);
+  users[userIndex].resetCode = resetCode;
+  users[userIndex].resetCodeExpires = expiresAt;
+  saveJSON("users.json", users);
+
+  // Afficher le code dans la console du backend (mode test)
+  console.log(`\n[RESET PASSWORD] Email: ${email} | Code: ${resetCode} | Valable 15 min\n`);
+
+  res.json({
+    success: true,
+    message: "Code de réinitialisation généré",
+    // Code inclus dans la réponse en dev pour que l'app puisse l'afficher
+    resetCode: NODE_ENV === "development" ? resetCode : undefined,
+    expiresIn: "15 minutes"
+  });
+});
+
+// Réinitialiser le mot de passe avec le code
+app.post("/auth/reset-password", async (req, res) => {
+  const { email, code, newPassword } = req.body || {};
+
+  if (!email || !code || !newPassword) {
+    return res.status(400).json({ success: false, message: "Email, code et nouveau mot de passe requis" });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ success: false, message: "Le mot de passe doit faire au moins 6 caractères" });
+  }
+
+  const userIndex = users.findIndex(u => u.email === email);
+
+  if (userIndex === -1) {
+    return res.status(404).json({ success: false, message: "Utilisateur non trouvé" });
+  }
+
+  const user = users[userIndex];
+
+  if (!user.resetCode || user.resetCode !== code) {
+    return res.status(400).json({ success: false, message: "Code invalide" });
+  }
+
+  if (Date.now() > user.resetCodeExpires) {
+    return res.status(400).json({ success: false, message: "Code expiré. Faites une nouvelle demande." });
+  }
+
+  users[userIndex].password = newPassword;
+  delete users[userIndex].resetCode;
+  delete users[userIndex].resetCodeExpires;
+  saveJSON("users.json", users);
+
+  res.json({ success: true, message: "Mot de passe réinitialisé avec succès" });
 });
 
 // ===========================================

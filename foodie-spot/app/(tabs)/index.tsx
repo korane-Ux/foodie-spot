@@ -1,204 +1,219 @@
+// =============================================================
+// app/(tabs)/index.tsx
+// Écran d'accueil - liste des restaurants proches
+// =============================================================
+
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator, FlatList,
+  RefreshControl, StyleSheet, Text,
+  TouchableOpacity, View,
+} from 'react-native';
+import { router } from 'expo-router';
 import { MapPin, Search } from 'lucide-react-native';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CategoryList } from '@/components/category-list';
 import { RestaurantCard } from '@/components/restaurant-card';
-import { restaurantAPI } from '@/services/api';
+import { CartBar } from '@/components/cart-bar';
+import { restaurantAPI, promoAPI } from '@/services/api';
 import { locationService } from '@/services/location';
-import { Restaurant } from '@/types';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '@/contexts/theme-context';
+import { useI18n } from '@/contexts/i18n-context';
+import { useToast } from '@/components/toast-provider';
+import { Restaurant, PromoResult } from '@/types';
+import { COLORS } from '@/constants/theme';
 
 export default function HomeScreen() {
+  const { colors } = useTheme();
+  const { t } = useI18n();
+  const toast = useToast();
+
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [location, setLocation] = useState<string>('Localisation...');
+  const [location, setLocation] = useState<string>('');
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [promos, setPromos] = useState<PromoResult[]>([]);
 
-  useEffect(() => {
-    loadData();
-    getCurrentLocation();
-  }, []);
-
-  const loadData = async () => {
+  // Chargement principal : restaurants + promos en parallèle
+  const loadData = useCallback(async (lat?: number, lng?: number) => {
     try {
-      const data = await restaurantAPI.getRestaurants();
+      // Promise.all pour charger les deux en même temps et gagner du temps
+      const [data, promoData] = await Promise.all([
+        restaurantAPI.getRestaurants(lat && lng ? { lat, lng } : undefined),
+        promoAPI.getAvailable(),
+      ]);
       setRestaurants(data);
-    } catch (error) {
-      Alert.alert("Erreur", "Impossible de charger les restaurants");
+      setPromos(promoData);
+    } catch (err) {
+      console.log('Erreur chargement home:', err); // TODO: améliorer la gestion d'erreur
+      toast.error(t('common.error'));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const getCurrentLocation = async () => {
-    const coords = await locationService.getCurrentLocation();
-    if (coords) {
-      const address = await locationService.reverseGeoCode(coords);
-      if (address) {
-        setLocation(address);
-      }
+  // Récupère la position GPS pour trier les restaurants par distance
+  const getCurrentLocation = useCallback(async () => {
+    setLocation(t('home.locating'));
+    const position = await locationService.getCurrentLocation();
+    if (position) {
+      setCoords(position);
+      const address = await locationService.reverseGeoCode(position);
+      if (address) setLocation(address);
+      await loadData(position.latitude, position.longitude);
+    } else {
+      // Si la localisation échoue, on charge quand même les restaurants
+      console.log('Localisation non disponible, chargement sans tri par distance');
+      setLocation('Paris, France');
+      await loadData();
     }
-  };
+  }, [loadData]);
+
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(coords?.latitude, coords?.longitude);
     setRefreshing(false);
   };
 
+  // Bannière promo dynamique depuis l'API (avant c'était hardcodé)
+  const PromoBanner = () => {
+    if (promos.length === 0) return null;
+    const promo = promos[0];
+    return (
+      <View style={styles.promoBanner}>
+        <Text style={styles.promoLabel}>{t('home.promoLabel')}</Text>
+        <Text style={styles.promoTitle}>{promo.description}</Text>
+        <Text style={styles.promoCode}>Code : {promo.code}</Text>
+      </View>
+    );
+  };
+
+  const ListHeader = () => (
+    <>
+      <PromoBanner />
+      <CategoryList />
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          {t('home.nearby')}
+        </Text>
+        <Text style={[styles.sectionCount, { color: colors.textSecondary }]}>
+          {restaurants.length}{' '}
+          {restaurants.length > 1 ? t('home.restaurantsPlural') : t('home.restaurants')}
+        </Text>
+      </View>
+    </>
+  );
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.locationContainer}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+
+      {/* Header avec localisation et barre de recherche */}
+      <View style={[styles.header, { backgroundColor: COLORS.primary }]}>
+        <View style={styles.locationRow}>
           <MapPin size={20} color="#fff" />
           <View style={{ flex: 1 }}>
-            <Text style={styles.locationLabel}>Livraison à </Text>
-            <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
+            <Text style={styles.locationLabel}>{t('home.deliveryTo')}</Text>
+            <Text style={styles.locationText} numberOfLines={1}>
+              {location || t('home.locating')}
+            </Text>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.searchBar} onPress={() => router.push('/(tabs)/search')}>
-          <Search size={20} color="#666" />
-          <Text style={styles.searchPlaceholder}>Rechercher un restaurant...</Text>
+        {/* La barre de recherche navigue vers l'écran Search */}
+        <TouchableOpacity
+          style={styles.searchBar}
+          onPress={() => router.push('/(tabs)/search')}
+          activeOpacity={0.8}
+          accessibilityLabel={t('home.searchPlaceholder')}
+          accessibilityRole="button"
+        >
+          <Search size={20} color="#999" />
+          <Text style={styles.searchPlaceholder}>{t('home.searchPlaceholder')}</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        style={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Bannière promo */}
-        <View style={styles.promoBanner}>
-          <Text style={styles.promoLabel}>Offre spéciale</Text>
-          <Text style={styles.promoTitle}>-30% sur votre première commande</Text>
-          <Text style={styles.promoCode}>Code: FOODIE30</Text>
+      {/* Spinner pendant le chargement initial */}
+      {loading ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={[styles.loaderText, { color: colors.textSecondary }]}>
+            {t('common.loading')}
+          </Text>
         </View>
-
-        <CategoryList />
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>À proximité</Text>
-
-          {/* État de chargement */}
-          {loading ? (
-            <View style={styles.centered}>
-              <ActivityIndicator size="large" color="#FF6B35" />
-              <Text style={styles.loadingText}>Chargement des restaurants...</Text>
-            </View>
-          ) : restaurants.length === 0 ? (
-            <View style={styles.centered}>
-              <Text style={styles.emptyIcon}>🍽️</Text>
-              <Text style={styles.emptyText}>Aucun restaurant trouvé</Text>
-            </View>
-          ) : (
-            restaurants.map((restaurant) => (
-              <RestaurantCard
-                key={restaurant.id}
-                restaurant={restaurant}
-                onPress={() => router.push(`/restaurant/${restaurant.id}`)}
-              />
-            ))
+      ) : (
+        <FlatList
+          data={restaurants}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <RestaurantCard
+              restaurant={item}
+              onPress={() => router.push(`/restaurant/${item.id}`)}
+            />
           )}
-        </View>
-      </ScrollView>
+          ListHeaderComponent={<ListHeader />}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          ListEmptyComponent={
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+              {t('home.noRestaurants')}
+            </Text>
+          }
+        />
+      )}
+
+      {/* Barre flottante panier (visible seulement si panier non vide) */}
+      <CartBar />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
+  container: { flex: 1 },
+  header: { padding: 16, paddingBottom: 20 },
+  locationRow: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 8, marginBottom: 16,
   },
-  header: {
-    backgroundColor: '#FF6B35',
-    padding: 16,
-    paddingBottom: 20,
-  },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  locationLabel: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  locationText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
+  locationLabel: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+  locationText: { fontSize: 16, fontWeight: '600', color: '#fff' },
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#fff', borderRadius: 24,
+    paddingHorizontal: 16, paddingVertical: 12,
   },
-  searchPlaceholder: {
-    flex: 1,
-    fontSize: 14,
-    color: 'rgba(0, 0, 0, 0.5)',
+  searchPlaceholder: { flex: 1, fontSize: 14, color: 'rgba(0,0,0,0.5)' },
+  loaderContainer: {
+    flex: 1, justifyContent: 'center',
+    alignItems: 'center', gap: 12,
   },
-  content: {
-    flex: 1,
-  },
+  loaderText: { fontSize: 15 },
+  listContent: { paddingBottom: 120 },
   promoBanner: {
-    margin: 16,
-    padding: 16,
-    backgroundColor: '#8B5CF6',
+    margin: 16, padding: 16,
+    backgroundColor: COLORS.secondary,
     borderRadius: 16,
   },
   promoLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 1,
-    marginBottom: 4,
-    textTransform: 'uppercase',
+    fontSize: 10, fontWeight: '700', color: '#fff',
+    letterSpacing: 1, marginBottom: 4, textTransform: 'uppercase',
   },
-  promoTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+  promoTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 4 },
+  promoCode: { fontSize: 13, color: 'rgba(255,255,255,0.9)' },
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16, marginBottom: 8,
   },
-  promoCode: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
-  },
-  section: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
-  centered: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#666',
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 8,
-  },
-  emptyText: {
-    color: '#666',
-    textAlign: 'center',
-    fontSize: 16,
-  },
+  sectionTitle: { fontSize: 18, fontWeight: '700' },
+  sectionCount: { fontSize: 14 },
+  emptyText: { textAlign: 'center', padding: 40, fontSize: 16 },
 });

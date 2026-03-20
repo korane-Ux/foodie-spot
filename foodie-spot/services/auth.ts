@@ -1,14 +1,19 @@
-// services/auth.ts
+// Auth service - gère les tokens JWT dans SecureStore
 
 import * as SecureStore from 'expo-secure-store';
-import api from './api';
+import axios from 'axios';
 import log from './logger';
 import { STORAGE_KEYS } from './storage';
 import { cache } from './cache';
+import config from '@/constants/config';
 
-// ============================================
-// Types
-// ============================================
+// Instance axios séparée pour login/register (évite le cycle d'import avec api.ts)
+const authAxios = axios.create({
+  baseURL: config.API_URL,
+  timeout: 10000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
 export interface User {
   id: string;
   email: string;
@@ -61,17 +66,18 @@ export interface AuthState {
   isAuthenticated: boolean;
 }
 
-
-
 // ============================================
-// Auth Service
+// AuthService
 // ============================================
 class AuthService {
+
+  // --- Gestion des tokens dans SecureStore ---
+
   async getAccessToken(): Promise<string | null> {
     try {
       return await SecureStore.getItemAsync(STORAGE_KEYS.ACCESS_TOKEN);
     } catch (error) {
-      log.error('Failed to get access token:', error);
+      log.error('Erreur lecture access token:', error);
       return null;
     }
   }
@@ -80,7 +86,7 @@ class AuthService {
     try {
       await SecureStore.setItemAsync(STORAGE_KEYS.ACCESS_TOKEN, token);
     } catch (error) {
-      log.error('Failed to set access token:', error);
+      log.error('Erreur sauvegarde access token:', error);
       throw error;
     }
   }
@@ -89,7 +95,7 @@ class AuthService {
     try {
       return await SecureStore.getItemAsync(STORAGE_KEYS.REFRESH_TOKEN);
     } catch (error) {
-      log.error('Failed to get refresh token:', error);
+      log.error('Erreur lecture refresh token:', error);
       return null;
     }
   }
@@ -98,7 +104,7 @@ class AuthService {
     try {
       await SecureStore.setItemAsync(STORAGE_KEYS.REFRESH_TOKEN, token);
     } catch (error) {
-      log.error('Failed to set refresh token:', error);
+      log.error('Erreur sauvegarde refresh token:', error);
       throw error;
     }
   }
@@ -109,19 +115,17 @@ class AuthService {
       await SecureStore.deleteItemAsync(STORAGE_KEYS.REFRESH_TOKEN);
       await SecureStore.deleteItemAsync(STORAGE_KEYS.USER);
     } catch (error) {
-      log.error('Failed to clear tokens:', error);
+      log.error('Erreur suppression tokens:', error);
     }
   }
 
   async getStoredUser(): Promise<User | null> {
     try {
       const userJson = await SecureStore.getItemAsync(STORAGE_KEYS.USER);
-      if (userJson) {
-        return JSON.parse(userJson);
-      }
+      if (userJson) return JSON.parse(userJson);
       return null;
     } catch (error) {
-      log.error('Failed to get stored user:', error);
+      log.error('Erreur lecture user stocké:', error);
       return null;
     }
   }
@@ -130,7 +134,7 @@ class AuthService {
     try {
       await SecureStore.setItemAsync(STORAGE_KEYS.USER, JSON.stringify(user));
     } catch (error) {
-      log.error('Failed to set stored user:', error);
+      log.error('Erreur sauvegarde user:', error);
       throw error;
     }
   }
@@ -144,16 +148,19 @@ class AuthService {
       const isAuthenticated = !!token && !!user;
       return { user: isAuthenticated ? user : null, isAuthenticated };
     } catch (error) {
-      log.error('Failed to get auth state:', error);
+      log.error('Erreur lecture état auth:', error);
       return { user: null, isAuthenticated: false };
     }
   }
 
+  // --- Appels API d'authentification ---
+  // On utilise authAxios (sans intercepteur de token) pour ces endpoints
+
   async login(credentials: LoginCredentials): Promise<{ user: User; tokens: AuthTokens }> {
     try {
-      log.info('🔐 [Auth] Attempting login for:', credentials.email);
+      log.info('🔐 [Auth] Tentative de connexion pour:', credentials.email);
 
-      const response = await api.post('/auth/login', credentials);
+      const response = await authAxios.post('/auth/login', credentials);
       const data = response.data.data || response.data;
 
       const user: User = {
@@ -169,29 +176,34 @@ class AuthService {
         expiresIn: data.expiresIn || 3600,
       };
 
+      // Sauvegarder les tokens de manière sécurisée
       await this.setAccessToken(tokens.accessToken);
       if (tokens.refreshToken) {
         await this.setRefreshToken(tokens.refreshToken);
       }
       await this.setStoredUser(user);
 
-      log.info('✅ [Auth] Login successful for:', user.email);
-      log.debug('Received tokens:', tokens);
+      log.info('✅ [Auth] Connexion réussie pour:', user.email);
       return { user, tokens };
     } catch (error: any) {
-      log.error('❌ [Auth] Login failed:', error.message);
+      log.error('❌ [Auth] Échec connexion:', error.message);
+      // On utilise le message du backend s'il existe (ex: "Aucun compte trouvé avec cet email")
+      const serverMessage = error.response?.data?.message;
+      if (serverMessage) {
+        throw new Error(serverMessage);
+      }
       if (error.response?.status === 401) {
         throw new Error('Email ou mot de passe incorrect');
       }
-      throw new Error('Erreur de connexion. Veuillez réessayer.');
+      throw new Error('Erreur de connexion. Vérifiez votre connexion internet.');
     }
   }
 
   async register(data: RegisterData): Promise<{ user: User; tokens: AuthTokens }> {
     try {
-      log.info('📝 [Auth] Attempting registration for:', data.email);
+      log.info('📝 [Auth] Tentative d\'inscription pour:', data.email);
 
-      const response = await api.post('/auth/register', {
+      const response = await authAxios.post('/auth/register', {
         email: data.email,
         password: data.password,
         firstName: data.firstName,
@@ -220,38 +232,40 @@ class AuthService {
       }
       await this.setStoredUser(user);
 
-      log.info('✅ [Auth] Registration successful for:', user.email);
+      log.info('✅ [Auth] Inscription réussie pour:', user.email);
       return { user, tokens };
     } catch (error: any) {
-      log.error('❌ [Auth] Registration failed:', error.message);
+      log.error('❌ [Auth] Échec inscription:', error.message);
       if (error.response?.status === 409) {
         throw new Error('Cet email est déjà utilisé');
       }
-      throw new Error('Erreur lors de l\'inscription. Veuillez réessayer.');
+      throw new Error('Erreur lors de l\'inscription. Vérifiez votre connexion internet.');
     }
   }
 
   async logout(): Promise<void> {
     try {
-      log.info('🚪 [Auth] Logging out...');
+      log.info('🚪 [Auth] Déconnexion...');
+      // On essaie d'appeler l'API logout mais ce n'est pas bloquant
       try {
-        await api.post('/auth/logout');
-      } catch (error) {
-        // Ignorer les erreurs de l'API logout
-        log.warn('⚠️ [Auth] Logout API call failed (ignoring):', error);
+        await authAxios.post('/auth/logout');
+      } catch {
+        log.warn('⚠️ [Auth] Appel API logout échoué (ignoré)');
       }
       await this.clearTokens();
       cache.clearAll();
-      
-      log.info('✅ [Auth] Logout successful');
+      log.info('✅ [Auth] Déconnexion réussie');
     } catch (error) {
-      log.error('❌ [Auth] Logout error:', error);
+      log.error('❌ [Auth] Erreur déconnexion:', error);
       await this.clearTokens();
     }
   }
 
   async updateProfile(updates: Partial<User>): Promise<User> {
     try {
+      // Pour updateProfile on a besoin du token → on utilise l'instance principale
+      // Import dynamique pour éviter le cycle au module level
+      const { default: api } = await import('./api');
       const response = await api.patch('/user/profile', updates);
       const user = response.data.data || response.data;
       const currentUser = await this.getStoredUser();
@@ -259,7 +273,7 @@ class AuthService {
       await this.setStoredUser(updatedUser);
       return updatedUser;
     } catch (error) {
-      log.error('Failed to update profile:', error);
+      log.error('Erreur mise à jour profil:', error);
       throw error;
     }
   }

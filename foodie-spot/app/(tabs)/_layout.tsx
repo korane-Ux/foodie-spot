@@ -1,76 +1,84 @@
-// app/(tabs)/_layout.tsx
-import { Tabs, router } from 'expo-router';
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
-
+import React from 'react';
+import { Text, View } from 'react-native';
+import { Tabs } from 'expo-router';
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { useCart } from '@/contexts/cart-context';
 import { useTheme } from '@/contexts/theme-context';
-
-function CartBadge({ count }: { count: number }) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const { colors } = useTheme();
-
-  useEffect(() => {
-    if (count === 0) return;
-    Animated.sequence([
-      Animated.spring(scaleAnim, { toValue: 1.5, useNativeDriver: true, speed: 40 }),
-      Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 20 }),
-    ]).start();
-  }, [count]);
-
-  if (count === 0) return null;
-
-  return (
-    <Animated.View style={[styles.badge, { backgroundColor: colors.primary, transform: [{ scale: scaleAnim }] }]}>
-      <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
-    </Animated.View>
-  );
-}
+import { useCart } from '@/contexts/cart-context';
+import { useI18n } from '@/contexts/i18n-context';
+import { COLORS } from '@/constants/theme';
 
 function CartTabIcon({ color }: { color: string }) {
   const { itemCount } = useCart();
   return (
-    <View style={styles.iconWrapper}>
-      <IconSymbol size={28} name="cart.fill" color={color} />
-      <CartBadge count={itemCount} />
+    <View style={{ position: 'relative' }}>
+      <IconSymbol size={28} name="bag" color={color} />
+      {itemCount > 0 && (
+        <View style={{
+          position: 'absolute', top: -4, right: -6,
+          backgroundColor: COLORS.primary,
+          width: 16, height: 16, borderRadius: 8,
+          alignItems: 'center', justifyContent: 'center',
+          borderWidth: 1.5, borderColor: '#fff',
+        }}>
+          <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>
+            {itemCount > 9 ? '9+' : itemCount}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
 
 export default function TabLayout() {
   const { colors } = useTheme();
+  const { t } = useI18n();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textTertiary,
-        tabBarStyle: { backgroundColor: colors.tabBar, borderTopColor: colors.borderLight, borderTopWidth: 1 },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
+        tabBarActiveTintColor: colors.tabIconSelected,
+        tabBarInactiveTintColor: colors.tabIconDefault,
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.border },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Accueil', tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} /> }} />
-      <Tabs.Screen name="search" options={{ title: 'Recherche', tabBarIcon: ({ color }) => <IconSymbol size={28} name="magnifyingglass" color={color} /> }} />
-      <Tabs.Screen name="orders" options={{ title: 'Commandes', tabBarIcon: ({ color }) => <IconSymbol size={28} name="bag" color={color} /> }} />
       <Tabs.Screen
-        name="cart-tab"
-        options={{ title: 'Panier', tabBarIcon: ({ color }) => <CartTabIcon color={color} /> }}
-        listeners={{ tabPress: (e) => { e.preventDefault(); router.push('/cart'); } }}
+        name="index"
+        options={{
+          title: t('nav.home'),
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+        }}
       />
-      <Tabs.Screen name="favorites" options={{ title: 'Favoris', tabBarIcon: ({ color }) => <IconSymbol size={28} name="heart.fill" color={color} /> }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profil', tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} /> }} />
-      {/* Masqué : expo-notifications incompatible Expo Go SDK 53 */}
-      <Tabs.Screen name="notifications" options={{ href: null }} />
+      <Tabs.Screen
+        name="search"
+        options={{
+          title: t('nav.search'),
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="magnifyingglass" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: t('nav.orders'),
+          tabBarIcon: ({ color }) => <CartTabIcon color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: t('nav.profile'),
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: t('nav.notifications'),
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="alarm.fill" color={color} />,
+        }}
+      />
     </Tabs>
   );
 }
-
-const styles = StyleSheet.create({
-  iconWrapper: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
-  badge: { position: 'absolute', top: -6, right: -10, minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 1.5, borderColor: '#fff' },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '800', lineHeight: 12 },
-});

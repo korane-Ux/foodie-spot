@@ -1,274 +1,356 @@
-import { useEffect, useState, useRef } from "react";
-import { useLocalSearchParams, router } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ScrollView, StyleSheet, Text, View, ActivityIndicator, TouchableOpacity, RefreshControl } from "react-native";
-import { Order } from "@/types";
-import { orderAPI } from "@/services/api";
-import { ArrowLeft, MapPin, Clock, Package, CheckCircle, Truck, ChefHat } from "lucide-react-native";
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Animated, Linking, RefreshControl,
+  ScrollView, StyleSheet, Text,
+  TouchableOpacity, View,
+} from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { ArrowLeft, CheckCircle, Clock, MapPin, Phone, Star } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 
-// Étapes de la timeline selon le statut
-const TIMELINE_STEPS = [
-    { key: 'pending', label: 'Commande reçue', icon: Package },
-    { key: 'preparing', label: 'En préparation', icon: ChefHat },
-    { key: 'on-the-way', label: 'En route', icon: Truck },
-    { key: 'delivered', label: 'Livré', icon: CheckCircle },
+import { Loader } from '@/components/ui/loader';
+import { orderAPI } from '@/services/api';
+import { useTheme } from '@/contexts/theme-context';
+import { useToast } from '@/components/toast-provider';
+import { COLORS } from '@/constants/theme';
+
+const POLL_INTERVAL = 10_000; // 10 secondes
+// Note: j'aurais voulu intégrer react-native-maps pour afficher la carte
+// mais ça nécessite un prebuild Expo donc j'ai gardé la timeline à la place
+
+const STATUS_STEPS = [
+  { key: 'pending',    label: 'Commande reçue',          icon: '📋' },
+  { key: 'confirmed',  label: 'Confirmée',                icon: '✅' },
+  { key: 'preparing',  label: 'En préparation',           icon: '👨‍🍳' },
+  { key: 'ready',      label: 'Prête',                    icon: '🎁' },
+  { key: 'picked_up',  label: 'Récupérée',                icon: '🏍️' },
+  { key: 'delivering', label: 'En livraison',             icon: '🛵' },
+  { key: 'delivered',  label: 'Livrée',                   icon: '🎉' },
 ];
 
-const STATUS_LABELS: Record<string, string> = {
-    pending: 'En attente',
-    preparing: 'En préparation',
-    'on-the-way': 'En route',
-    delivered: 'Livré',
-    cancelled: 'Annulé',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-    pending: '#f59e0b',
-    preparing: '#3b82f6',
-    'on-the-way': '#8b5cf6',
-    delivered: '#10b981',
-    cancelled: '#ef4444',
-};
+function getStepIndex(status: string) {
+  const i = STATUS_STEPS.findIndex((s) => s.key === status);
+  return i === -1 ? 0 : i;
+}
 
 export default function TrackingScreen() {
-    const { orderId } = useLocalSearchParams<{ orderId: string }>();
-    const [order, setOrder] = useState<Order | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  const { colors } = useTheme();
+  const toast = useToast();
 
-    useEffect(() => {
-        loadOrder();
-        // Polling toutes les 15 secondes pour suivre la progression
-        intervalRef.current = setInterval(loadOrder, 15000);
-        return () => {
-            if (intervalRef.current) clearInterval(intervalRef.current);
-        };
-    }, [orderId]);
+  const [trackingData, setTrackingData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  // Flag pour n'afficher l'erreur qu'une seule fois (évite le spam de toasts)
+  const errorShownRef = useRef(false);
+  // Flag pour stopper le polling si la commande est terminée
+  const stopPollingRef = useRef(false);
 
-    const loadOrder = async () => {
-        try {
-            const orderData = await orderAPI.getOrderById(orderId);
-            setOrder(orderData);
-        } finally {
-            setLoading(false);
-        }
-    };
+  // Animation de progression
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
-    const onRefresh = async () => {
-        setRefreshing(true);
-        await loadOrder();
-        setRefreshing(false);
-    };
+  const loadTracking = useCallback(async () => {
+    // Ne pas recharger si le polling est arrêté (commande livrée ou annulée)
+    if (stopPollingRef.current) return;
+    try {
+      const data = await orderAPI.trackOrder(orderId);
+      setTrackingData(data);
+      errorShownRef.current = false; // reset si ça remarche
 
-    const getStepIndex = (status: string) => {
-        return TIMELINE_STEPS.findIndex(s => s.key === status);
-    };
+      // Arrêter le polling si la commande est terminée
+      if (data.status === 'delivered' || data.status === 'cancelled') {
+        stopPollingRef.current = true;
+      }
 
-    if (loading) {
-        return (
-            <SafeAreaView style={styles.container} edges={['top']}>
-                <View style={styles.centered}>
-                    <ActivityIndicator size="large" color="#FF6B35" />
-                    <Text style={styles.loadingText}>Chargement du suivi...</Text>
-                </View>
-            </SafeAreaView>
-        );
+      // Animer la barre de progression
+      const stepIndex = getStepIndex(data.status);
+      const progress = STATUS_STEPS.length > 1
+        ? stepIndex / (STATUS_STEPS.length - 1)
+        : 0;
+      Animated.timing(progressAnim, {
+        toValue: progress,
+        duration: 600,
+        useNativeDriver: false,
+      }).start();
+    } catch {
+      // Afficher l'erreur UNE SEULE FOIS, pas à chaque poll
+      if (!errorShownRef.current && !trackingData) {
+        errorShownRef.current = true;
+        toast.error('Impossible de charger le suivi');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
+  }, [orderId]);
 
-    if (!order) {
-        return (
-            <SafeAreaView style={styles.container} edges={['top']}>
-                <View style={styles.centered}>
-                    <Text style={styles.errorText}>Commande introuvable</Text>
-                    <TouchableOpacity onPress={() => router.back()}>
-                        <Text style={styles.backLink}>← Retour</Text>
-                    </TouchableOpacity>
-                </View>
-            </SafeAreaView>
-        );
-    }
+  useEffect(() => {
+    loadTracking();
+    const interval = setInterval(loadTracking, POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [loadTracking]);
 
-    const currentStepIndex = getStepIndex(order.status);
-    const statusColor = STATUS_COLORS[order.status] || '#666';
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadTracking();
+  };
 
+  const handleCallDriver = () => {
+    const phone = trackingData?.driver?.phone;
+    if (phone) Linking.openURL(`tel:${phone}`);
+  };
+
+  const handleCallRestaurant = () => {
+    const phone = trackingData?.restaurant?.phone;
+    if (phone) Linking.openURL(`tel:${phone}`);
+  };
+
+  if (loading) return <Loader message="Chargement du suivi..." />;
+
+  if (!trackingData) {
     return (
-        <SafeAreaView style={styles.container} edges={['top']}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color="#111827" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Suivi commande</Text>
-                <View style={styles.placeholder} />
-            </View>
-
-            <ScrollView
-                contentContainerStyle={styles.content}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            >
-                {/* Statut principal */}
-                <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-                    <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                    <Text style={[styles.statusText, { color: statusColor }]}>
-                        {STATUS_LABELS[order.status] || order.status}
-                    </Text>
-                </View>
-
-                {/* Info commande */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>#{order.id}</Text>
-                    <Text style={styles.restaurantName}>{order.restaurantName}</Text>
-                    <View style={styles.infoRow}>
-                        <MapPin size={16} color="#666" />
-                        <Text style={styles.infoText}>{order.deliveryAddress}</Text>
-                    </View>
-                    {order.estimatedDeliveryTime && (
-                        <View style={styles.infoRow}>
-                            <Clock size={16} color="#666" />
-                            <Text style={styles.infoText}>
-                                Livraison estimée : {new Date(order.estimatedDeliveryTime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                            </Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Timeline */}
-                {order.status !== 'cancelled' && (
-                    <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Progression</Text>
-                        {TIMELINE_STEPS.map((step, index) => {
-                            const isCompleted = index <= currentStepIndex;
-                            const isCurrent = index === currentStepIndex;
-                            const Icon = step.icon;
-                            return (
-                                <View key={step.key} style={styles.timelineStep}>
-                                    <View style={styles.timelineLeft}>
-                                        <View style={[
-                                            styles.timelineCircle,
-                                            isCompleted && styles.timelineCircleActive,
-                                            isCurrent && { backgroundColor: statusColor },
-                                        ]}>
-                                            <Icon size={16} color={isCompleted ? '#fff' : '#ccc'} />
-                                        </View>
-                                        {index < TIMELINE_STEPS.length - 1 && (
-                                            <View style={[
-                                                styles.timelineLine,
-                                                index < currentStepIndex && styles.timelineLineActive,
-                                            ]} />
-                                        )}
-                                    </View>
-                                    <Text style={[
-                                        styles.timelineLabel,
-                                        isCompleted && styles.timelineLabelActive,
-                                        isCurrent && { color: statusColor, fontWeight: '700' },
-                                    ]}>
-                                        {step.label}
-                                    </Text>
-                                </View>
-                            );
-                        })}
-                    </View>
-                )}
-
-                {/* Infos livreur */}
-                {order.driverInfo && (
-                    <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Votre livreur</Text>
-                        <View style={styles.driverRow}>
-                            <View style={styles.driverAvatar}>
-                                <Text style={styles.driverAvatarText}>
-                                    {order.driverInfo.name.charAt(0).toUpperCase()}
-                                </Text>
-                            </View>
-                            <View style={styles.driverInfo}>
-                                <Text style={styles.driverName}>{order.driverInfo.name}</Text>
-                                <Text style={styles.driverPhone}>{order.driverInfo.phone}</Text>
-                            </View>
-                        </View>
-                    </View>
-                )}
-
-                {/* Articles commandés */}
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Articles</Text>
-                    {order.items?.map((item, index) => (
-                        <View key={index} style={styles.itemRow}>
-                            <Text style={styles.itemQty}>{item.quantity}x</Text>
-                            <Text style={styles.itemName}>{item.dish?.name}</Text>
-                            <Text style={styles.itemPrice}>{(item.dish?.price * item.quantity).toFixed(2)} €</Text>
-                        </View>
-                    ))}
-                    <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Total</Text>
-                        <Text style={styles.totalValue}>{order.total?.toFixed(2)} €</Text>
-                    </View>
-                </View>
-
-                <Text style={styles.refreshHint}>↓ Tirez pour actualiser</Text>
-            </ScrollView>
-        </SafeAreaView>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.textSecondary, textAlign: 'center', padding: 40 }}>
+          Commande introuvable
+        </Text>
+      </SafeAreaView>
     );
+  }
+
+  const currentStepIndex = getStepIndex(trackingData.status);
+  const isDelivered = trackingData.status === 'delivered';
+  const isCancelled = trackingData.status === 'cancelled';
+
+  const progressWidth = progressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <ArrowLeft size={24} color={colors.text} />
+        </TouchableOpacity>
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>Suivi de commande</Text>
+          {trackingData.orderNumber && (
+            <Text style={[styles.orderNum, { color: colors.textSecondary }]}>
+              #{trackingData.orderNumber}
+            </Text>
+          )}
+        </View>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={{ padding: 16, gap: 16 }}
+      >
+        {/* Statut principal */}
+        <View style={[styles.statusCard, { backgroundColor: isCancelled ? '#FFEBEE' : isDelivered ? '#E8F5E9' : '#FFF4EF' }]}>
+          <Text style={styles.statusEmoji}>
+            {isCancelled ? '❌' : STATUS_STEPS[currentStepIndex]?.icon ?? '📋'}
+          </Text>
+          <Text style={[styles.statusLabel, { color: isCancelled ? COLORS.error : isDelivered ? COLORS.success : COLORS.primary }]}>
+            {isCancelled ? 'Commande annulée' : STATUS_STEPS[currentStepIndex]?.label ?? trackingData.status}
+          </Text>
+          {trackingData.estimatedMinutes !== undefined && !isDelivered && !isCancelled && (
+            <View style={styles.etaRow}>
+              <Clock size={14} color={COLORS.primary} />
+              <Text style={[styles.etaText, { color: COLORS.primary }]}>
+                Environ {trackingData.estimatedMinutes} min
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Barre de progression */}
+        {!isCancelled && (
+          <View style={styles.progressSection}>
+            <View style={[styles.progressTrack, { backgroundColor: colors.backgroundSecondary }]}>
+              <Animated.View
+                style={[styles.progressFill, { width: progressWidth, backgroundColor: isDelivered ? COLORS.success : COLORS.primary }]}
+              />
+            </View>
+            <View style={styles.stepsRow}>
+              {STATUS_STEPS.map((step, i) => {
+                const done = i <= currentStepIndex;
+                return (
+                  <View key={step.key} style={styles.stepItem}>
+                    <View style={[
+                      styles.stepDot,
+                      { backgroundColor: done ? (isDelivered && i === STATUS_STEPS.length - 1 ? COLORS.success : COLORS.primary) : colors.border }
+                    ]}>
+                      {done && <CheckCircle size={10} color="#fff" />}
+                    </View>
+                    <Text style={[styles.stepLabel, { color: done ? colors.text : colors.textMuted }]} numberOfLines={2}>
+                      {step.label}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Timeline */}
+        {trackingData.timeline && trackingData.timeline.length > 0 && (
+          <View style={[styles.card, { backgroundColor: colors.card }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Historique</Text>
+            {[...trackingData.timeline].reverse().map((entry: any, i: number) => (
+              <View key={i} style={styles.timelineItem}>
+                <View style={[styles.timelineDot, { backgroundColor: i === 0 ? COLORS.primary : colors.border }]} />
+                <View>
+                  <Text style={[styles.timelineMsg, { color: colors.text }]}>{entry.message}</Text>
+                  <Text style={[styles.timelineTime, { color: colors.textMuted }]}>
+                    {new Date(entry.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Livreur */}
+        {trackingData.driver && (
+          <View style={[styles.card, { backgroundColor: colors.card }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Votre livreur</Text>
+            <View style={styles.driverRow}>
+              <Image
+                source={{ uri: trackingData.driver.photo ?? 'https://randomuser.me/api/portraits/men/32.jpg' }}
+                style={styles.driverPhoto}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.driverName, { color: colors.text }]}>{trackingData.driver.name}</Text>
+                {trackingData.driver.vehicle && (
+                  <Text style={[styles.driverVehicle, { color: colors.textSecondary }]}>
+                    🏍️ {trackingData.driver.vehicle}
+                  </Text>
+                )}
+                {trackingData.driver.rating && (
+                  <View style={styles.driverRating}>
+                    <Star size={12} color="#FFC107" fill="#FFC107" />
+                    <Text style={[styles.driverRatingText, { color: colors.textSecondary }]}>
+                      {trackingData.driver.rating}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity style={styles.callBtn} onPress={handleCallDriver}>
+                <Phone size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Restaurant */}
+        {trackingData.restaurant && (
+          <View style={[styles.card, { backgroundColor: colors.card }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Restaurant</Text>
+            <View style={styles.driverRow}>
+              {trackingData.restaurant.image && (
+                <Image source={{ uri: trackingData.restaurant.image }} style={styles.restImage} />
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.driverName, { color: colors.text }]}>{trackingData.restaurant.name}</Text>
+                {trackingData.restaurant.location?.address && (
+                  <View style={styles.driverRating}>
+                    <MapPin size={12} color={colors.textMuted} />
+                    <Text style={[styles.driverRatingText, { color: colors.textSecondary }]}>
+                      {trackingData.restaurant.location.address}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity style={[styles.callBtn, { backgroundColor: colors.backgroundSecondary }]} onPress={handleCallRestaurant}>
+                <Phone size={18} color={COLORS.primary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Adresse livraison */}
+        {trackingData.deliveryAddress && (
+          <View style={[styles.card, { backgroundColor: colors.card }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Adresse de livraison</Text>
+            <View style={styles.driverRating}>
+              <MapPin size={16} color={COLORS.primary} />
+              <Text style={[styles.driverVehicle, { color: colors.textSecondary }]}>
+                {typeof trackingData.deliveryAddress === 'string'
+                  ? trackingData.deliveryAddress
+                  : `${trackingData.deliveryAddress.street}, ${trackingData.deliveryAddress.city}`}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Action review si livré */}
+        {isDelivered && (
+          <TouchableOpacity
+            style={[styles.reviewBtn, { backgroundColor: COLORS.secondary }]}
+            onPress={() => router.push(`/review/${orderId}`)}
+          >
+            <Star size={20} color="#fff" />
+            <Text style={styles.reviewBtnText}>Laisser un avis</Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f9fafb' },
-    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-    loadingText: { marginTop: 12, fontSize: 14, color: '#666' },
-    errorText: { fontSize: 16, color: '#666', marginBottom: 12 },
-    backLink: { color: '#FF6B35', fontSize: 16 },
-    header: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        padding: 16, backgroundColor: '#fff',
-        borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-    },
-    backButton: { padding: 4 },
-    headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
-    placeholder: { width: 32 },
-    content: { padding: 16, gap: 16 },
-    statusBadge: {
-        flexDirection: 'row', alignItems: 'center', gap: 8,
-        padding: 12, borderRadius: 12, alignSelf: 'flex-start',
-    },
-    statusDot: { width: 10, height: 10, borderRadius: 5 },
-    statusText: { fontSize: 16, fontWeight: '700' },
-    card: {
-        backgroundColor: '#fff', borderRadius: 16,
-        padding: 16, gap: 8,
-    },
-    cardTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 4 },
-    restaurantName: { fontSize: 18, fontWeight: '600', color: '#FF6B35' },
-    infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 4 },
-    infoText: { fontSize: 14, color: '#666', flex: 1 },
-    timelineStep: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 4 },
-    timelineLeft: { alignItems: 'center', width: 32 },
-    timelineCircle: {
-        width: 32, height: 32, borderRadius: 16,
-        backgroundColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center',
-    },
-    timelineCircleActive: { backgroundColor: '#10b981' },
-    timelineLine: { width: 2, height: 24, backgroundColor: '#e5e7eb', marginTop: 2 },
-    timelineLineActive: { backgroundColor: '#10b981' },
-    timelineLabel: { fontSize: 14, color: '#9ca3af', paddingTop: 6 },
-    timelineLabelActive: { color: '#111827' },
-    driverRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    driverAvatar: {
-        width: 48, height: 48, borderRadius: 24,
-        backgroundColor: '#FF6B35', alignItems: 'center', justifyContent: 'center',
-    },
-    driverAvatarText: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-    driverInfo: { flex: 1 },
-    driverName: { fontSize: 16, fontWeight: '600', color: '#111827' },
-    driverPhone: { fontSize: 14, color: '#666', marginTop: 2 },
-    itemRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
-    itemQty: { fontSize: 14, color: '#FF6B35', fontWeight: '700', width: 24 },
-    itemName: { flex: 1, fontSize: 14, color: '#111827' },
-    itemPrice: { fontSize: 14, color: '#666' },
-    totalRow: {
-        flexDirection: 'row', justifyContent: 'space-between',
-        borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 8, marginTop: 4,
-    },
-    totalLabel: { fontSize: 15, fontWeight: '700', color: '#111827' },
-    totalValue: { fontSize: 15, fontWeight: '700', color: '#FF6B35' },
-    refreshHint: { textAlign: 'center', color: '#ccc', fontSize: 12, marginTop: 8 },
+  container: { flex: 1 },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16, borderBottomWidth: 1,
+  },
+  title: { fontSize: 20, fontWeight: 'bold' },
+  orderNum: { fontSize: 13 },
+  statusCard: {
+    borderRadius: 16, padding: 20,
+    alignItems: 'center', gap: 8,
+  },
+  statusEmoji: { fontSize: 48 },
+  statusLabel: { fontSize: 20, fontWeight: '700' },
+  etaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  etaText: { fontSize: 14, fontWeight: '600' },
+  progressSection: { gap: 12 },
+  progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 3 },
+  stepsRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  stepItem: { flex: 1, alignItems: 'center', gap: 4 },
+  stepDot: {
+    width: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stepLabel: { fontSize: 9, textAlign: 'center', lineHeight: 12 },
+  card: { borderRadius: 16, padding: 16 },
+  cardTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12 },
+  timelineItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
+  timelineMsg: { fontSize: 14, fontWeight: '500' },
+  timelineTime: { fontSize: 12, marginTop: 2 },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  driverPhoto: { width: 52, height: 52, borderRadius: 26 },
+  restImage: { width: 52, height: 52, borderRadius: 10 },
+  driverName: { fontSize: 15, fontWeight: '700' },
+  driverVehicle: { fontSize: 13, marginTop: 2 },
+  driverRating: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  driverRatingText: { fontSize: 13 },
+  callBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  reviewBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, borderRadius: 16, padding: 16,
+  },
+  reviewBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

@@ -1,14 +1,59 @@
 [
   {
-    "id": "1b607cf6-3400-401f-bb9f-10c99204b526",
-    "email": "test@test.com",
-    "firstName": "test",
+    "id": "6418f441-241f-4a4c-8489-ff8f780c1b44",
+    "email": "satoruyamato90@gmail.com",
+    "password": "Minaruto!47",
+    "firstName": "Yazid",
+    "lastName": "EL-BAK",
+    "phone": "",
+    "avatar": "",
+    "addresses": [
+      {
+        "id": "93a9385b-61e7-4880-a330-ad3b6ecef51f",
+        "label": "Maison",
+        "street": "41 rue de Strasbourg ",
+        "apartment": "Bat B",
+        "city": "Paris",
+        "postalCode": "75009",
+        "country": "France",
+        "latitude": 48.8566,
+        "longitude": 2.3522,
+        "isDefault": false,
+        "instructions": "",
+        "createdAt": "2026-03-16T00:58:14.990Z"
+      },
+      {
+        "id": "90cdf730-47a9-4e77-8b7a-57579020a2e4",
+        "label": "Maison",
+        "street": "53 rue de gendarme",
+        "apartment": "Bat A",
+        "city": "Paris",
+        "postalCode": "75010",
+        "country": "France",
+        "latitude": 48.8566,
+        "longitude": 2.3522,
+        "isDefault": false,
+        "instructions": "Code 3224\n",
+        "createdAt": "2026-03-16T20:09:56.246Z"
+      }
+    ],
+    "notificationsEnabled": true,
+    "preferences": {
+      "theme": "system",
+      "language": "fr"
+    },
+    "createdAt": "2026-03-16T00:33:22.578Z"
+  },
+  {
+    "id": "f204182b-5645-49cd-9f58-7a0fefa67290",
+    "email": "chiifa@hotmail.fr",
+    "firstName": "chiifa",
     "lastName": "Demo",
     "phone": "",
     "avatar": "",
     "addresses": [
       {
-        "id": "00ac8769-7e0d-4eb8-8810-2ee97bd35544",
+        "id": "af7be7bd-62ca-4db3-86bc-edb43a9bc26f",
         "label": "Maison",
         "street": "123 Rue de Paris",
         "city": "Paris",
@@ -24,7 +69,7 @@
       "theme": "system",
       "language": "fr"
     },
-    "createdAt": "2026-03-19T19:37:38.263Z",
-    "password": "1234567"
+    "createdAt": "2026-03-16T14:17:15.421Z",
+    "password": "Yanis!12"
   }
 ]

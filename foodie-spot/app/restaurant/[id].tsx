@@ -1,283 +1,396 @@
-import { useEffect, useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, Share } from "react-native";
-import { Dish, Restaurant } from "@/types";
-import { router, useLocalSearchParams } from "expo-router";
-import { restaurantAPI, userAPI } from "@/services/api";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Image } from "expo-image";
-import { ArrowLeft, Clock, Heart, MapPin, Navigation, Phone, Share2, Star, Bike, DollarSign } from "lucide-react-native";
-import { DishCard } from "@/components/dish-card";
-import * as Location from 'expo-location';
+// =============================================================
+// app/restaurant/[id].tsx
+// Détail d'un restaurant : infos, menu par catégorie, avis
+// =============================================================
 
-// Calcul distance en km entre deux coordonnées (formule Haversine)
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Linking, ScrollView, Share,
+  StyleSheet, Text, TouchableOpacity, View,
+} from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Image } from 'expo-image';
+import {
+  ArrowLeft, Clock, Heart, Info,
+  MapPin, Navigation, Phone, Share2, Star,
+} from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Estimation livraison basée sur la distance
-function estimateDelivery(distanceKm: number): { time: string; cost: string } {
-    const baseTime = 15; // minutes de préparation
-    const timePerKm = 4; // minutes par km
-    const baseFee = 1.99;
-    const feePerKm = 0.5;
-
-    const totalTime = Math.round(baseTime + distanceKm * timePerKm);
-    const totalCost = baseFee + distanceKm * feePerKm;
-
-    return {
-        time: `${totalTime}-${totalTime + 10} min`,
-        cost: `${totalCost.toFixed(2)} €`,
-    };
-}
+import { DishCard } from '@/components/dish-card';
+import { Loader } from '@/components/ui/loader';
+import { CartBar } from '@/components/cart-bar';
+import { restaurantAPI, userAPI } from '@/services/api';
+import { locationService } from '@/services/location';
+import { useTheme } from '@/contexts/theme-context';
+import { useToast } from '@/components/toast-provider';
+import { useI18n } from '@/contexts/i18n-context';
+import { Dish, DeliveryEstimate, MenuCategory, Restaurant, Review } from '@/types';
+import { COLORS } from '@/constants/theme';
 
 export default function RestaurantScreen() {
-    const { id } = useLocalSearchParams<{ id: string }>();
-    const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
-    const [menu, setMenu] = useState<Dish[]>([]);
-    const [isFavorite, setIsFavorite] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [estimate, setEstimate] = useState<{ time: string; cost: string } | null>(null);
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { colors } = useTheme();
+  const toast = useToast();
+  const { t } = useI18n();
 
-    useEffect(() => {
-        loadRestaurant();
-    }, [id]);
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [estimate, setEstimate] = useState<DeliveryEstimate | null>(null);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-    const loadRestaurant = async () => {
-        try {
-            const restaurantData = await restaurantAPI.getRestaurantById(id);
-            const menuData = await restaurantAPI.getMenu(id);
-            setRestaurant(restaurantData);
-            setMenu(menuData);
-            setIsFavorite(restaurantData?.isFavorite || false);
+  const loadData = useCallback(async () => {
+    try {
+      // Chargement en parallèle pour aller plus vite
+      const [restaurantData, menuData, reviewsData] = await Promise.all([
+        restaurantAPI.getRestaurantById(id),
+        restaurantAPI.getMenuCategories(id),
+        restaurantAPI.getReviews(id),
+      ]);
 
-            // Calcul estimation livraison avec GPS
-            if (restaurantData?.location?.lat && restaurantData?.location?.lng) {
-                calculateEstimate(restaurantData.location.lat, restaurantData.location.lng);
-            } else if (restaurantData?.distance) {
-                // Fallback sur distance fournie par l'API
-                const dist = parseFloat(String(restaurantData.distance));
-                if (!isNaN(dist)) setEstimate(estimateDelivery(dist));
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
+      setRestaurant(restaurantData);
+      setMenuCategories(menuData);
+      setReviews(reviewsData);
+      setIsFavorite(restaurantData?.isFavorite ?? false);
 
-    const calculateEstimate = async (restLat: number, restLng: number) => {
-        try {
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                setEstimate(estimateDelivery(2)); // fallback 2km
-                return;
-            }
-            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-            const dist = haversineDistance(loc.coords.latitude, loc.coords.longitude, restLat, restLng);
-            setEstimate(estimateDelivery(dist));
-        } catch {
-            setEstimate(estimateDelivery(2));
-        }
-    };
+      // Première catégorie active par défaut
+      if (menuData.length > 0) setActiveCategory(menuData[0].id);
 
-    const handleToggleFavorite = async () => {
-        try {
-            await userAPI.toggleFavorite(id);
-            setIsFavorite(!isFavorite);
-        } catch {
-            Alert.alert("Erreur", "Impossible de mettre à jour les favoris");
-        }
-    };
+      // Estimation livraison avec GPS
+      const coords = await locationService.getCurrentLocation();
+      const est = await restaurantAPI.getDeliveryEstimate(
+        id,
+        coords?.latitude,
+        coords?.longitude
+      );
+      setEstimate(est);
 
-    const handleItinerary = () => {
-        if (!restaurant?.address) { Alert.alert("Adresse indisponible"); return; }
-        const address = encodeURIComponent(restaurant.address);
-        Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${address}`)
-            .catch(() => Alert.alert("Erreur", "Impossible d'ouvrir Maps"));
-    };
-
-    const handleCall = () => {
-        if (!restaurant?.phone) { Alert.alert("Numéro indisponible"); return; }
-        Linking.openURL(`tel:${restaurant.phone}`)
-            .catch(() => Alert.alert("Erreur", "Impossible de passer l'appel"));
-    };
-
-    const handleShare = async () => {
-        try {
-            await Share.share({
-                message: `Découvre ${restaurant?.name} sur FoodieSpot ! ${restaurant?.cuisine} - Note: ${restaurant?.rating}/5`,
-                title: restaurant?.name,
-            });
-        } catch {}
-    };
-
-    if (loading) {
-        return (
-            <SafeAreaView style={styles.container} edges={['top']}>
-                <View style={styles.centered}>
-                    <ActivityIndicator size="large" color="#FF6B35" />
-                    <Text style={styles.loadingText}>Chargement du restaurant...</Text>
-                </View>
-            </SafeAreaView>
-        );
+    } catch (err) {
+      console.log('Erreur chargement restaurant:', err);
+      toast.error(t('common.error'));
+    } finally {
+      setLoading(false);
     }
+  }, [id]);
 
-    if (!restaurant) {
-        return (
-            <SafeAreaView style={styles.container} edges={['top']}>
-                <View style={styles.centered}>
-                    <Text style={styles.errorText}>Restaurant introuvable</Text>
-                    <TouchableOpacity onPress={() => router.back()}>
-                        <Text style={styles.backLink}>← Retour</Text>
-                    </TouchableOpacity>
-                </View>
-            </SafeAreaView>
-        );
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleToggleFavorite = async () => {
+    try {
+      await userAPI.toggleFavorite(id);
+      setIsFavorite((prev) => !prev);
+      toast.success(isFavorite ? t('restaurant.removedFavorite') : t('restaurant.addedFavorite'));
+    } catch {
+      toast.error(t('restaurant.favoritesError'));
     }
+  };
 
-    const deliveryTime = typeof restaurant.deliveryTime === 'object' && restaurant.deliveryTime !== null
-        ? `${(restaurant.deliveryTime as { min: number; max: number }).min}-${(restaurant.deliveryTime as { min: number; max: number }).max}`
-        : restaurant.deliveryTime;
-
-    return (
-        <SafeAreaView style={styles.container} edges={['top']}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={styles.imageContainer}>
-                    <Image source={{ uri: restaurant.image }} style={styles.image} />
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <ArrowLeft size={24} color="#000" />
-                    </TouchableOpacity>
-                    <View style={styles.headerActions}>
-                        <TouchableOpacity style={styles.actionButton} onPress={handleToggleFavorite}>
-                            <Heart size={24} color={isFavorite ? '#FF6B35' : '#000'} fill={isFavorite ? '#FF6B35' : 'transparent'} />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-                            <Share2 size={18} color="#000" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                <View style={styles.info}>
-                    <Text style={styles.name}>{restaurant.name}</Text>
-                    <Text style={styles.cuisine}>{restaurant.cuisine}</Text>
-
-                    <View style={styles.meta}>
-                        <View style={styles.metaItem}>
-                            <Star size={16} color="#FFC107" fill="#FFC107" />
-                            <Text style={styles.metaText}>{restaurant.rating.toFixed(1)} ({restaurant.reviewsCount})</Text>
-                        </View>
-                        <View style={styles.metaItem}>
-                            <Clock size={16} color="#666" />
-                            <Text style={styles.metaText}>{deliveryTime} min</Text>
-                        </View>
-                        <View style={styles.metaItem}>
-                            <MapPin size={16} color="#666" />
-                            <Text style={styles.metaText}>{restaurant.distance} km</Text>
-                        </View>
-                    </View>
-
-                    {/* Estimation dynamique livraison */}
-                    {estimate && (
-                        <View style={styles.estimateBox}>
-                            <Text style={styles.estimateTitle}>📍 Estimation pour votre adresse</Text>
-                            <View style={styles.estimateRow}>
-                                <View style={styles.estimateItem}>
-                                    <Clock size={18} color="#FF6B35" />
-                                    <View>
-                                        <Text style={styles.estimateLabel}>Temps estimé</Text>
-                                        <Text style={styles.estimateValue}>{estimate.time}</Text>
-                                    </View>
-                                </View>
-                                <View style={styles.estimateDivider} />
-                                <View style={styles.estimateItem}>
-                                    <Bike size={18} color="#FF6B35" />
-                                    <View>
-                                        <Text style={styles.estimateLabel}>Frais de livraison</Text>
-                                        <Text style={styles.estimateValue}>{estimate.cost}</Text>
-                                    </View>
-                                </View>
-                            </View>
-                        </View>
-                    )}
-
-                    <View style={styles.actions}>
-                        <TouchableOpacity style={styles.primaryButton} onPress={handleItinerary}>
-                            <Navigation size={18} color="#fff" />
-                            <Text style={styles.primaryButtonText}>Itinéraire</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.secondaryButton} onPress={handleCall}>
-                            <Phone size={18} color="#666" />
-                            <Text style={styles.secondaryButtonText}>Appeler</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                <View style={styles.menu}>
-                    <Text style={styles.menuTitle}>Menu</Text>
-                    {menu.length === 0 ? (
-                        <Text style={styles.emptyMenu}>Aucun plat disponible</Text>
-                    ) : (
-                        menu.map((dish) => (
-                            <DishCard key={dish.id} dish={dish} onPress={() => router.push(`/dish/${dish.id}`)} />
-                        ))
-                    )}
-                </View>
-            </ScrollView>
-        </SafeAreaView>
+  // Ouvre l'app Maps avec l'adresse du restaurant
+  const handleCall = () => {
+    const phone = restaurant?.phone;
+    if (!phone) return;
+    Linking.openURL(`tel:${phone}`).catch(() =>
+      toast.error("Impossible d'ouvrir le téléphone")
     );
+  };
+
+  const handleDirections = () => {
+    if (!restaurant) return;
+    const { latitude, longitude, address } = restaurant;
+    const query = latitude && longitude
+      ? `${latitude},${longitude}`
+      : encodeURIComponent(address);
+    Linking.openURL(`https://maps.google.com/?q=${query}`);
+  };
+
+  const handleShare = async () => {
+    if (!restaurant) return;
+    try {
+      await Share.share({
+        title: restaurant.name,
+        message: `Découvrez ${restaurant.name} sur FoodieSpot ! ${restaurant.address}`,
+      });
+    } catch { /* l'utilisateur a annulé */ }
+  };
+
+  // Formatage du temps de livraison (peut être un objet ou un nombre selon l'API)
+  const deliveryDisplay =
+    typeof restaurant?.deliveryTime === 'object' && restaurant.deliveryTime !== null
+      ? `${(restaurant.deliveryTime as any).min}-${(restaurant.deliveryTime as any).max} min`
+      : `${restaurant?.deliveryTime} min`;
+
+  const cuisineDisplay = Array.isArray(restaurant?.cuisine)
+    ? restaurant.cuisine.join(' • ')
+    : restaurant?.cuisine;
+
+  // Plats de la catégorie sélectionnée
+  const activeDishes: Dish[] =
+    menuCategories.find((c) => c.id === activeCategory)?.items ?? [];
+
+  if (loading) return <Loader message={t('restaurant.loading')} />;
+
+  if (!restaurant) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.text, textAlign: 'center', padding: 40 }}>
+          {t('restaurant.notFound')}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <ScrollView showsVerticalScrollIndicator={false} stickyHeaderIndices={[1]}>
+
+        {/* Image d'en-tête */}
+        <View style={styles.imageContainer}>
+          <Image source={{ uri: restaurant.image }} style={styles.image} />
+
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            accessibilityLabel={t('common.back')}
+          >
+            <ArrowLeft size={22} color="#000" />
+          </TouchableOpacity>
+
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={handleToggleFavorite}
+              accessibilityLabel={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+            >
+              <Heart
+                size={22}
+                color={isFavorite ? COLORS.primary : '#000'}
+                fill={isFavorite ? COLORS.primary : 'transparent'}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
+              <Share2 size={20} color="#000" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Informations restaurant */}
+        <View style={[styles.infoSection, { backgroundColor: colors.card }]}>
+          <Text style={[styles.name, { color: colors.text }]}>{restaurant.name}</Text>
+          <Text style={[styles.cuisine, { color: colors.textSecondary }]}>{cuisineDisplay}</Text>
+
+          {/* Métadonnées : note, temps, distance */}
+          <View style={styles.metaRow}>
+            <View style={styles.metaItem}>
+              <Star size={15} color="#FFC107" fill="#FFC107" />
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                {restaurant.rating.toFixed(1)} ({restaurant.reviewCount} avis)
+              </Text>
+            </View>
+            <View style={styles.metaItem}>
+              <Clock size={15} color={colors.textMuted} />
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                {deliveryDisplay}
+              </Text>
+            </View>
+            {restaurant.distance !== undefined && (
+              <View style={styles.metaItem}>
+                <MapPin size={15} color={colors.textMuted} />
+                <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                  {restaurant.distance.toFixed(1)} km
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Estimation livraison dynamique (feature J) */}
+          {estimate && (
+            <View style={[styles.estimateCard, { backgroundColor: colors.backgroundSecondary }]}>
+              <Info size={16} color={COLORS.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.estimateTitle, { color: colors.text }]}>
+                  {t('restaurant.deliveryEstimate')}
+                </Text>
+                <Text style={[styles.estimateDetail, { color: colors.textSecondary }]}>
+                  ⏱ {estimate.estimatedTime.display}  •  📍 {estimate.distance} km  •  🛵{' '}
+                  {estimate.deliveryFee === 0
+                    ? t('restaurant.free')
+                    : `${estimate.deliveryFee.toFixed(2)} €`}
+                </Text>
+                {estimate.freeDeliveryThreshold > 0 && (
+                  <Text style={[styles.freeDelivery, { color: COLORS.primary }]}>
+                    {t('restaurant.freeDeliveryFrom')} {estimate.freeDeliveryThreshold} €
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Boutons actions */}
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, { backgroundColor: COLORS.primary }]}
+              onPress={handleDirections}
+              accessibilityLabel={t('restaurant.directions')}
+            >
+              <Navigation size={16} color="#fff" />
+              <Text style={styles.primaryBtnText}>{t('restaurant.directions')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { backgroundColor: colors.backgroundSecondary }]}
+              onPress={handleCall}
+              accessibilityLabel={t('restaurant.call')}
+            >
+              <Phone size={16} color={colors.text} />
+              <Text style={[styles.secondaryBtnText, { color: colors.text }]}>
+                {t('restaurant.call')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Onglets de navigation dans le menu */}
+        <View style={[styles.categoriesRow, { backgroundColor: colors.card }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+          >
+            {menuCategories.map((cat) => (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.catChip,
+                  {
+                    backgroundColor:
+                      activeCategory === cat.id
+                        ? COLORS.primary
+                        : colors.backgroundSecondary,
+                  },
+                ]}
+                onPress={() => setActiveCategory(cat.id)}
+                accessibilityState={{ selected: activeCategory === cat.id }}
+              >
+                <Text style={[
+                  styles.catChipText,
+                  { color: activeCategory === cat.id ? '#fff' : colors.textSecondary },
+                ]}>
+                  {cat.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Liste des plats */}
+        <View style={{ padding: 16 }}>
+          {activeDishes.map((dish) => (
+            <DishCard
+              key={dish.id}
+              dish={dish}
+              restaurantId={id}
+              restaurantName={restaurant.name}
+              onPress={() =>
+                router.push(`/dish/${dish.id}?restaurantId=${id}&restaurantName=${encodeURIComponent(restaurant.name)}`)
+              }
+            />
+          ))}
+        </View>
+
+        {/* Avis récents */}
+        {reviews.length > 0 && (
+          <View style={{ padding: 16 }}>
+            <Text style={[styles.reviewsTitle, { color: colors.text }]}>
+              {t('restaurant.reviews')}
+            </Text>
+            {reviews.slice(0, 3).map((review) => (
+              <View
+                key={review.id}
+                style={[styles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <View style={styles.reviewHeader}>
+                  <Text style={[styles.reviewUser, { color: colors.text }]}>
+                    {review.userName}
+                  </Text>
+                  <View style={styles.reviewStars}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star
+                        key={i}
+                        size={12}
+                        color="#FFC107"
+                        fill={i < review.rating ? '#FFC107' : 'transparent'}
+                      />
+                    ))}
+                  </View>
+                </View>
+                {review.comment ? (
+                  <Text
+                    style={[styles.reviewComment, { color: colors.textSecondary }]}
+                    numberOfLines={2}
+                  >
+                    {review.comment}
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={{ height: 120 }} />
+      </ScrollView>
+
+      <CartBar />
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff', marginTop: -50 },
-    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-    loadingText: { marginTop: 12, fontSize: 14, color: '#666' },
-    errorText: { fontSize: 16, color: '#666', marginBottom: 12 },
-    backLink: { color: '#FF6B35', fontSize: 16 },
-    imageContainer: { position: 'relative', height: 200 },
-    image: { width: '100%', height: '100%' },
-    backButton: {
-        position: 'absolute', top: 50, left: 16,
-        borderRadius: 20, backgroundColor: '#fff',
-        alignItems: 'center', justifyContent: 'center', padding: 8,
-    },
-    headerActions: { position: 'absolute', top: 16, right: 16, flexDirection: 'row', gap: 8 },
-    actionButton: {
-        marginTop: 34, width: 40, height: 40, borderRadius: 20,
-        backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
-    },
-    info: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-    name: { fontSize: 24, fontWeight: 'bold', marginBottom: 4 },
-    cuisine: { fontSize: 16, color: '#666', marginBottom: 12 },
-    meta: { flexDirection: 'row', gap: 16, marginBottom: 16 },
-    metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    metaText: { fontSize: 14, color: '#666' },
-    estimateBox: {
-        backgroundColor: '#FFF5F2', borderRadius: 12,
-        padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#FFD5C2',
-    },
-    estimateTitle: { fontSize: 13, fontWeight: '700', color: '#FF6B35', marginBottom: 12 },
-    estimateRow: { flexDirection: 'row', alignItems: 'center' },
-    estimateItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-    estimateDivider: { width: 1, height: 36, backgroundColor: '#FFD5C2', marginHorizontal: 12 },
-    estimateLabel: { fontSize: 11, color: '#999' },
-    estimateValue: { fontSize: 15, fontWeight: '700', color: '#111827' },
-    actions: { flexDirection: 'row', gap: 12 },
-    primaryButton: {
-        flex: 1, flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'center', gap: 8,
-        backgroundColor: '#FF6B35', borderRadius: 12, padding: 12,
-    },
-    primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-    secondaryButton: {
-        flex: 1, flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'center', gap: 8,
-        backgroundColor: '#F5F5F5', borderRadius: 12, padding: 12,
-    },
-    secondaryButtonText: { color: '#666', fontSize: 16, fontWeight: '600' },
-    menu: { padding: 16 },
-    menuTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
-    emptyMenu: { color: '#999', textAlign: 'center', padding: 20 },
+  container: { flex: 1 },
+  imageContainer: { height: 220, position: 'relative' },
+  image: { width: '100%', height: '100%' },
+  backBtn: {
+    position: 'absolute', top: 16, left: 16,
+    backgroundColor: '#fff', borderRadius: 20, padding: 8,
+  },
+  headerActions: {
+    position: 'absolute', top: 16, right: 16,
+    flexDirection: 'row', gap: 8,
+  },
+  actionBtn: { backgroundColor: '#fff', borderRadius: 20, padding: 8 },
+  infoSection: { padding: 16 },
+  name: { fontSize: 22, fontWeight: 'bold', marginBottom: 4 },
+  cuisine: { fontSize: 14, marginBottom: 10 },
+  metaRow: { flexDirection: 'row', gap: 16, marginBottom: 14, flexWrap: 'wrap' },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 13 },
+  estimateCard: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    gap: 10, borderRadius: 12, padding: 12, marginBottom: 14,
+  },
+  estimateTitle: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  estimateDetail: { fontSize: 13 },
+  freeDelivery: { fontSize: 12, fontWeight: '600', marginTop: 4 },
+  actionsRow: { flexDirection: 'row', gap: 10 },
+  primaryBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 8, borderRadius: 12, padding: 12,
+  },
+  primaryBtnText: { color: '#fff', fontWeight: '600' },
+  secondaryBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 8, borderRadius: 12, padding: 12,
+  },
+  secondaryBtnText: { fontWeight: '600' },
+  categoriesRow: { paddingVertical: 12 },
+  catChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  catChipText: { fontSize: 13, fontWeight: '600' },
+  reviewsTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  reviewCard: { borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1 },
+  reviewHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  reviewUser: { fontWeight: '600', fontSize: 14 },
+  reviewStars: { flexDirection: 'row', gap: 2 },
+  reviewComment: { fontSize: 13, lineHeight: 18 },
 });

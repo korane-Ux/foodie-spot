@@ -1,188 +1,151 @@
-import { OrderCard } from "@/components/order-card";
-import { orderAPI } from "@/services/api";
-import { Order } from "@/types";
-import { router } from "expo-router";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  FlatList, RefreshControl, StyleSheet,
+  Text, TouchableOpacity, View,
+} from 'react-native';
+import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-type TabType = 'all' | 'active' | 'delivered' | 'cancelled';
+import { OrderCard } from '@/components/order-card';
+import { Loader } from '@/components/ui/loader';
+import { EmptyState } from '@/components/ui/empty-state';
+import { orderAPI } from '@/services/api';
+import { useTheme } from '@/contexts/theme-context';
+import { useI18n } from '@/contexts/i18n-context';
+import { Order, OrderStatus } from '@/types';
+import { COLORS } from '@/constants/theme';
 
-const TABS: { key: TabType; label: string }[] = [
-    { key: 'all', label: 'Toutes' },
-    { key: 'active', label: 'En cours' },
-    { key: 'delivered', label: 'Livrées' },
-    { key: 'cancelled', label: 'Annulées' },
+type Tab = 'all' | 'active' | 'delivered' | 'cancelled';
+
+const ACTIVE_STATUSES: OrderStatus[] = [
+  'pending', 'confirmed', 'preparing', 'ready', 'picked_up', 'delivering', 'on-the-way',
 ];
 
+function filterOrders(orders: Order[], tab: Tab): Order[] {
+  switch (tab) {
+    case 'active':    return orders.filter((o) => ACTIVE_STATUSES.includes(o.status as OrderStatus));
+    case 'delivered': return orders.filter((o) => o.status === 'delivered');
+    case 'cancelled': return orders.filter((o) => o.status === 'cancelled');
+    default:          return orders;
+  }
+}
+
 export default function OrdersScreen() {
-    const [orders, setOrders] = useState<Order[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [activeTab, setActiveTab] = useState<TabType>('all');
+  const { colors } = useTheme();
+  const { t } = useI18n();
 
-    useEffect(() => {
-        loadOrders();
-    }, []);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('all');
 
-    const loadOrders = async () => {
-        try {
-            const data = await orderAPI.getOrders();
-            setOrders(data);
-        } finally {
-            setLoading(false);
-        }
-    };
+  const loadOrders = useCallback(async () => {
+    try {
+      const data = await orderAPI.getOrders();
+      setOrders(data);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    const onRefresh = async () => {
-        setRefreshing(true);
-        await loadOrders();
-        setRefreshing(false);
-    };
+  useEffect(() => { loadOrders(); }, []);
 
-    const filteredOrders = orders.filter((order) => {
-        if (activeTab === 'all') return true;
-        if (activeTab === 'active') return ['on-the-way', 'preparing', 'pending'].includes(order.status);
-        if (activeTab === 'delivered') return order.status === 'delivered';
-        if (activeTab === 'cancelled') return order.status === 'cancelled';
-        return true;
-    });
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadOrders();
+    setRefreshing(false);
+  };
 
-    return (
-        <SafeAreaView style={styles.container} edges={['top']}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Mes Commandes</Text>
-            </View>
+  const handleOrderPress = useCallback((order: Order) => {
+    if (ACTIVE_STATUSES.includes(order.status as OrderStatus)) {
+      router.push(`/tracking/${order.id}`);
+    }
+  }, []);
 
-            {/* Onglets filtres */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer} contentContainerStyle={styles.tabsContent}>
-                {TABS.map((tab) => (
-                    <TouchableOpacity
-                        key={tab.key}
-                        style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-                        onPress={() => setActiveTab(tab.key)}
-                    >
-                        <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-                            {tab.label}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </ScrollView>
+  const renderOrder = useCallback(
+    ({ item }: { item: Order }) => (
+      <OrderCard order={item} onPress={() => handleOrderPress(item)} />
+    ),
+    [handleOrderPress]
+  );
 
-            {/* Contenu */}
-            {loading ? (
-                <View style={styles.centered}>
-                    <ActivityIndicator size="large" color="#FF6B35" />
-                    <Text style={styles.loadingText}>Chargement des commandes...</Text>
+  const TABS: { key: Tab; label: string }[] = [
+    { key: 'all',       label: t('orders.all') },
+    { key: 'active',    label: t('orders.active') },
+    { key: 'delivered', label: t('orders.delivered') },
+    { key: 'cancelled', label: t('orders.cancelled') },
+  ];
+
+  const filtered = filterOrders(orders, activeTab);
+
+  if (loading) return <Loader message={t('common.loading')} />;
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.title, { color: colors.text }]}>{t('orders.title')}</Text>
+      </View>
+
+      {/* Onglets */}
+      <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
+        {TABS.map((tab) => {
+          const count = filterOrders(orders, tab.key).length;
+          const active = activeTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tab, { borderBottomColor: active ? COLORS.primary : 'transparent' }]}
+              onPress={() => setActiveTab(tab.key)}
+              accessibilityLabel={tab.label}
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[styles.tabText, { color: active ? COLORS.primary : colors.textSecondary }]}>
+                {tab.label}
+              </Text>
+              {count > 0 && (
+                <View style={[styles.tabBadge, { backgroundColor: active ? COLORS.primary : colors.backgroundTertiary }]}>
+                  <Text style={[styles.tabBadgeText, { color: active ? '#fff' : colors.textSecondary }]}>
+                    {count}
+                  </Text>
                 </View>
-            ) : (
-                <ScrollView
-                    style={styles.content}
-                    showsVerticalScrollIndicator={false}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-                >
-                    {filteredOrders.length === 0 ? (
-                        <View style={styles.emptyState}>
-                            <Ionicons name="receipt-outline" size={64} color="#ccc" />
-                            <Text style={styles.emptyText}>Aucune commande trouvée</Text>
-                            <Text style={styles.emptySubText}>Vos commandes apparaîtront ici</Text>
-                        </View>
-                    ) : (
-                        filteredOrders.map((order) => (
-                            <OrderCard
-                                key={order.id}
-                                order={order}
-                                onPress={() => {
-                                    if (['on-the-way', 'preparing', 'pending'].includes(order.status) && order.id) {
-                                        router.push(`/tracking/${order.id}`);
-                                    } else {
-                                        router.push(`/tracking/${order.id}`);
-                                    }
-                                }}
-                            />
-                        ))
-                    )}
-                </ScrollView>
-            )}
-        </SafeAreaView>
-    );
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <FlatList
+        data={filtered}
+        keyExtractor={(o) => o.id}
+        renderItem={renderOrder}
+        contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        ListEmptyComponent={
+          <EmptyState
+            icon="🛍️"
+            title={t('orders.empty')}
+            subtitle={t('orders.emptySubtitle')}
+            actionLabel={t('orders.orderNow')}
+            onAction={() => router.push('/(tabs)')}
+          />
+        }
+      />
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f9fafb',
-    },
-    header: {
-        padding: 16,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
-    },
-    title: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#111827',
-    },
-    tabsContainer: {
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
-    },
-    tabsContent: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        gap: 8,
-    },
-    tab: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        backgroundColor: '#f3f4f6',
-        marginRight: 8,
-    },
-    tabActive: {
-        backgroundColor: '#FF6B35',
-    },
-    tabText: {
-        fontSize: 14,
-        color: '#666',
-        fontWeight: '500',
-    },
-    tabTextActive: {
-        color: '#fff',
-        fontWeight: '600',
-    },
-    content: {
-        flex: 1,
-        padding: 16,
-    },
-    centered: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 40,
-    },
-    loadingText: {
-        marginTop: 12,
-        fontSize: 14,
-        color: '#666',
-    },
-    emptyState: {
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: 80,
-    },
-    emptyText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#333',
-        marginTop: 16,
-    },
-    emptySubText: {
-        fontSize: 14,
-        color: '#999',
-        marginTop: 4,
-    },
+  container: { flex: 1 },
+  header: { padding: 16, borderBottomWidth: 1 },
+  title: { fontSize: 24, fontWeight: 'bold' },
+  tabs: { flexDirection: 'row', borderBottomWidth: 1 },
+  tab: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', paddingVertical: 12,
+    gap: 4, borderBottomWidth: 2,
+  },
+  tabText: { fontSize: 12, fontWeight: '600' },
+  tabBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 8 },
+  tabBadgeText: { fontSize: 10, fontWeight: '700' },
+  listContent: { padding: 16, paddingBottom: 100 },
 });
