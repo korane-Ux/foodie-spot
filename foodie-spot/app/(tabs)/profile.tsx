@@ -1,8 +1,15 @@
+// app/(tabs)/profile.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image, ActivityIndicator } from 'react-native';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Alert, Image, ActivityIndicator, Switch,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { MapPin, Heart, ShoppingBag, Phone, Share2, Camera, ChevronRight, LogOut } from 'lucide-react-native';
+import {
+  MapPin, Heart, ShoppingBag, Phone, Share2,
+  Camera, ChevronRight, LogOut, Moon, Sun, Monitor,
+} from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 import { userAPI, uploadAPI, orderAPI } from '@/services/api';
@@ -10,10 +17,13 @@ import type { User } from '@/types';
 import log from '@/services/logger';
 import { useToast } from '@/components/toast-provider';
 import { useAuth } from '@/contexts/auth-context';
+import { useTheme } from '@/contexts/theme-context';
 
 export default function ProfileScreen() {
   const toast = useToast();
   const { logout } = useAuth();
+  const { colors, isDark, themeMode, setThemeMode, toggleTheme } = useTheme();
+
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [orderCount, setOrderCount] = useState(0);
@@ -72,32 +82,63 @@ export default function ProfileScreen() {
       {
         text: 'Déconnexion',
         style: 'destructive',
-        onPress: async () => {
-          await logout();
-        },
+        onPress: async () => { await logout(); },
       },
     ]);
   };
 
-  // Vrai loader/skeleton pendant le chargement
+  const handleThemeMode = () => {
+    Alert.alert(
+      'Apparence',
+      'Choisissez le thème de l\'application',
+      [
+        {
+          text: '☀️  Clair',
+          onPress: () => setThemeMode('light'),
+        },
+        {
+          text: '🌙  Sombre',
+          onPress: () => setThemeMode('dark'),
+        },
+        {
+          text: '📱  Système',
+          onPress: () => setThemeMode('system'),
+        },
+        { text: 'Annuler', style: 'cancel' },
+      ]
+    );
+  };
+
+  const themeLabel = themeMode === 'light' ? 'Clair' : themeMode === 'dark' ? 'Sombre' : 'Système';
+  const ThemeIcon = themeMode === 'light' ? Sun : themeMode === 'dark' ? Moon : Monitor;
+
+  // — Loader —
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#FF6B35" />
-          <Text style={styles.loadingText}>Chargement du profil...</Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            Chargement du profil...
+          </Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Si pas d'user après chargement
+  // — Erreur —
   if (!user) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.centered}>
-          <Text style={styles.errorText}>Impossible de charger le profil</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadUser}>
+          <Text style={{ fontSize: 48 }}>😕</Text>
+          <Text style={[styles.errorText, { color: colors.textSecondary }]}>
+            Impossible de charger le profil
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={loadUser}
+          >
             <Text style={styles.retryText}>Réessayer</Text>
           </TouchableOpacity>
         </View>
@@ -106,16 +147,17 @@ export default function ProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView>
-        {/* Header profil */}
-        <View style={styles.header}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+
+        {/* Header */}
+        <View style={[styles.header, { backgroundColor: colors.surface }]}>
           <View style={styles.profileContainer}>
             <View style={styles.avatarContainer}>
               {user.photo ? (
                 <Image source={{ uri: user.photo }} style={styles.avatar} />
               ) : (
-                <View style={styles.avatarPlaceholder}>
+                <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary }]}>
                   <Text style={styles.avatarText}>{user.name.charAt(0).toUpperCase()}</Text>
                 </View>
               )}
@@ -123,199 +165,192 @@ export default function ProfileScreen() {
                 <Camera size={14} color="#fff" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.name}>{user.name}</Text>
-            <Text style={styles.email}>{user.email}</Text>
-            <Text style={styles.phone}>{user.phone}</Text>
+            <Text style={[styles.name, { color: colors.text }]}>{user.name}</Text>
+            <Text style={[styles.email, { color: colors.textSecondary }]}>{user.email}</Text>
+            {user.phone ? (
+              <Text style={[styles.phone, { color: colors.textTertiary }]}>{user.phone}</Text>
+            ) : null}
           </View>
         </View>
 
-        {/* Stats dynamiques depuis l'API */}
-        <View style={styles.stats}>
+        {/* Stats */}
+        <View style={[styles.stats, { backgroundColor: colors.surfaceSecondary }]}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{orderCount}</Text>
-            <Text style={styles.statLabel}>Commandes</Text>
+            <Text style={[styles.statValue, { color: colors.primary }]}>{orderCount}</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Commandes</Text>
           </View>
-          <View style={styles.statDivider} />
+          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.favoriteRestaurants?.length ?? 0}</Text>
-            <Text style={styles.statLabel}>Favoris</Text>
+            <Text style={[styles.statValue, { color: colors.primary }]}>
+              {user.favoriteRestaurants?.length ?? 0}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Favoris</Text>
           </View>
-          <View style={styles.statDivider} />
+          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.addresses?.length ?? 0}</Text>
-            <Text style={styles.statLabel}>Adresses</Text>
+            <Text style={[styles.statValue, { color: colors.primary }]}>
+              {user.addresses?.length ?? 0}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Adresses</Text>
           </View>
         </View>
 
-        {/* Menu */}
-        <View style={styles.menu}>
-          <TouchableOpacity style={styles.menuItem}>
-            <MapPin size={20} color="#666" />
-            <Text style={styles.menuText}>Mes adresses</Text>
+        {/* Section Apparence */}
+        <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>APPARENCE</Text>
+        <View style={[styles.menu, { backgroundColor: colors.surface }]}>
+
+          {/* Toggle rapide sombre/clair */}
+          <View style={[styles.menuItem, { borderBottomColor: colors.borderLight }]}>
+            <ThemeIcon size={20} color={colors.textSecondary} />
+            <Text style={[styles.menuText, { color: colors.text }]}>Mode sombre</Text>
+            <Switch
+              value={isDark}
+              onValueChange={toggleTheme}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          {/* Choix fin : clair / sombre / système */}
+          <TouchableOpacity
+            style={[styles.menuItem, { borderBottomColor: colors.borderLight }]}
+            onPress={handleThemeMode}
+          >
+            <Monitor size={20} color={colors.textSecondary} />
+            <Text style={[styles.menuText, { color: colors.text }]}>Thème</Text>
             <View style={styles.menuRight}>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{user.addresses?.length ?? 0}</Text>
+              <View style={[styles.themeBadge, { backgroundColor: colors.primaryLight }]}>
+                <Text style={[styles.themeBadgeText, { color: colors.primary }]}>{themeLabel}</Text>
               </View>
-              <ChevronRight size={18} color="#ccc" />
+              <ChevronRight size={18} color={colors.textTertiary} />
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Section Mon compte */}
+        <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>MON COMPTE</Text>
+        <View style={[styles.menu, { backgroundColor: colors.surface }]}>
+
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.borderLight }]}>
+            <MapPin size={20} color={colors.textSecondary} />
+            <Text style={[styles.menuText, { color: colors.text }]}>Mes adresses</Text>
+            <View style={styles.menuRight}>
+              <View style={[styles.badge, { backgroundColor: colors.primaryLight }]}>
+                <Text style={[styles.badgeText, { color: colors.primary }]}>
+                  {user.addresses?.length ?? 0}
+                </Text>
+              </View>
+              <ChevronRight size={18} color={colors.textTertiary} />
             </View>
           </TouchableOpacity>
 
-          {/* Favoris → redirige vers orders en attendant l'écran favorites */}
-          <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/(tabs)/orders')}>
-            <Heart size={20} color="#666" />
-            <Text style={styles.menuText}>Mes favoris</Text>
+          <TouchableOpacity
+            style={[styles.menuItem, { borderBottomColor: colors.borderLight }]}
+            onPress={() => router.push('/(tabs)/favorites')}
+          >
+            <Heart size={20} color={colors.textSecondary} />
+            <Text style={[styles.menuText, { color: colors.text }]}>Mes favoris</Text>
             <View style={styles.menuRight}>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{user.favoriteRestaurants?.length ?? 0}</Text>
+              <View style={[styles.badge, { backgroundColor: colors.primaryLight }]}>
+                <Text style={[styles.badgeText, { color: colors.primary }]}>
+                  {user.favoriteRestaurants?.length ?? 0}
+                </Text>
               </View>
-              <ChevronRight size={18} color="#ccc" />
+              <ChevronRight size={18} color={colors.textTertiary} />
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/(tabs)/orders')}>
-            <ShoppingBag size={20} color="#666" />
-            <Text style={styles.menuText}>Historique</Text>
-            <ChevronRight size={18} color="#ccc" />
+          <TouchableOpacity
+            style={[styles.menuItem, { borderBottomColor: colors.borderLight }]}
+            onPress={() => router.push('/(tabs)/orders')}
+          >
+            <ShoppingBag size={20} color={colors.textSecondary} />
+            <Text style={[styles.menuText, { color: colors.text }]}>Historique commandes</Text>
+            <ChevronRight size={18} color={colors.textTertiary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Support', 'Pour toute assistance, veuillez contacter notre support client')}>
-            <Phone size={20} color="#666" />
-            <Text style={styles.menuText}>Support</Text>
-            <ChevronRight size={18} color="#ccc" />
+          <TouchableOpacity
+            style={[styles.menuItem, { borderBottomColor: colors.borderLight }]}
+            onPress={() => Alert.alert('Support', 'Pour toute assistance, contactez notre support client.')}
+          >
+            <Phone size={20} color={colors.textSecondary} />
+            <Text style={[styles.menuText, { color: colors.text }]}>Support</Text>
+            <ChevronRight size={18} color={colors.textTertiary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
-            <Share2 size={20} color="#666" />
-            <Text style={styles.menuText}>Partager l'app</Text>
-            <ChevronRight size={18} color="#ccc" />
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.borderLight }]}>
+            <Share2 size={20} color={colors.textSecondary} />
+            <Text style={[styles.menuText, { color: colors.text }]}>Partager l'app</Text>
+            <ChevronRight size={18} color={colors.textTertiary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.menuItem, styles.logoutItem]} onPress={handleLogout}>
-            <LogOut size={20} color="#FF6B35" />
-            <Text style={[styles.menuText, styles.logoutText]}>Déconnexion</Text>
+          <TouchableOpacity
+            style={[styles.menuItem, styles.logoutItem]}
+            onPress={handleLogout}
+          >
+            <LogOut size={20} color={colors.primary} />
+            <Text style={[styles.menuText, styles.logoutText, { color: colors.primary }]}>
+              Déconnexion
+            </Text>
           </TouchableOpacity>
         </View>
+
+        <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#666',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  retryText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  header: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  profileContainer: {
-    alignItems: 'center',
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
+  container: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 12 },
+  loadingText: { fontSize: 14, marginTop: 8 },
+  errorText: { fontSize: 16, textAlign: 'center' },
+  retryButton: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryText: { color: '#fff', fontWeight: '600' },
+
+  header: { padding: 24, alignItems: 'center' },
+  profileContainer: { alignItems: 'center' },
+  avatarContainer: { position: 'relative', marginBottom: 12 },
+  avatar: { width: 88, height: 88, borderRadius: 44 },
   avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#FF6B35',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 88, height: 88, borderRadius: 44,
+    alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
+  avatarText: { fontSize: 36, fontWeight: 'bold', color: '#fff' },
   cameraButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    position: 'absolute', bottom: 0, right: 0,
+    width: 28, height: 28, borderRadius: 14,
     backgroundColor: '#3B82F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#fff',
   },
-  name: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  email: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 2,
-  },
-  phone: {
-    fontSize: 12,
-    color: '#999',
-  },
+  name: { fontSize: 22, fontWeight: 'bold', marginBottom: 4 },
+  email: { fontSize: 14, marginBottom: 2 },
+  phone: { fontSize: 12 },
+
   stats: {
     flexDirection: 'row',
-    backgroundColor: '#f9f9f9',
     marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 12,
+    marginBottom: 8,
+    borderRadius: 14,
     padding: 16,
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#e0e0e0',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FF6B35',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
+  statItem: { flex: 1, alignItems: 'center' },
+  statDivider: { width: 1 },
+  statValue: { fontSize: 24, fontWeight: 'bold', marginBottom: 4 },
+  statLabel: { fontSize: 12 },
+
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 6,
   },
   menu: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 14,
     marginHorizontal: 16,
     overflow: 'hidden',
   },
@@ -324,34 +359,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    gap: 12,
   },
-  menuText: {
-    flex: 1,
-    fontSize: 16,
-    marginLeft: 12,
-  },
-  menuRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
+  menuText: { flex: 1, fontSize: 16 },
+  menuRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   badge: {
-    backgroundColor: '#FFE5DB',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 8, paddingVertical: 2,
     borderRadius: 10,
   },
-  badgeText: {
-    fontSize: 12,
-    color: '#FF6B35',
-    fontWeight: '600',
+  badgeText: { fontSize: 12, fontWeight: '600' },
+  themeBadge: {
+    paddingHorizontal: 10, paddingVertical: 3,
+    borderRadius: 10,
   },
-  logoutItem: {
-    borderBottomWidth: 0,
-  },
-  logoutText: {
-    color: '#FF6B35',
-    fontWeight: '600',
-  },
+  themeBadgeText: { fontSize: 12, fontWeight: '600' },
+  logoutItem: { borderBottomWidth: 0 },
+  logoutText: { fontWeight: '600' },
 });

@@ -7,7 +7,8 @@ export interface Restaurant {
     rating: number;
     reviewsCount: number;
     deliveryTime: number;
-    distance: number;
+    distance: number | string;
+    location?: { lat: number; lng: number };
     priceRange: string;
     address: string;
     phone: string;
@@ -28,7 +29,7 @@ export interface SearchFilters {
 }
 export interface Dish {
     id: string;
-    resurantId: string;
+    restaurantId: string;
     name: string;
     description: string;
     price: number;
